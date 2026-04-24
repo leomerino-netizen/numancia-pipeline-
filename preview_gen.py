@@ -200,47 +200,45 @@ def generar_preview(texto: str, titulo: str, autor: str) -> bytes:
     story.append(Paragraph("Editorial Numancia", CREDB))
     story.append(Paragraph("Grupo Printcolorweb.com", CRED_G))
 
-    # P5+ texto
+    # P5+ texto — solo primer capítulo, sin saltos de página adicionales
     story.append(NextPageTemplate('chap'))
     story.append(PageBreak())
 
     bloques = _parsear(texto)
-    primer_cap = True
     primer_parr = True
-    pagina_actual = 5
-    max_paginas = 10
+    cap_encontrado = False
+    MAX_PARRAFOS = 80  # límite de párrafos para no sobrepasar 6 páginas
 
+    parrafos_añadidos = 0
     for bloque in bloques:
-        if pagina_actual > max_paginas:
+        if parrafos_añadidos >= MAX_PARRAFOS:
             break
 
         tipo = bloque[0]
 
         if tipo == 'capitulo':
-            if not primer_cap:
-                story.append(NextPageTemplate('chap'))
-                story.append(PageBreak())
-                pagina_actual += 1
-                if pagina_actual > max_paginas:
-                    break
-            primer_cap = False
-            primer_parr = True
-            story.append(Paragraph(bloque[1].upper(), CAP_N))
-            if bloque[2]:
-                story.append(Paragraph(bloque[2], CAP_S))
-            story.append(NextPageTemplate('recto'))
+            if not cap_encontrado:
+                # Primer capítulo: mostrar encabezado
+                cap_encontrado = True
+                primer_parr = True
+                story.append(Paragraph(bloque[1].upper(), CAP_N))
+                if bloque[2]:
+                    story.append(Paragraph(bloque[2], CAP_S))
+                story.append(NextPageTemplate('recto'))
+            else:
+                # Segundo capítulo en adelante: parar
+                break
 
         elif tipo == 'dialogo':
             story.append(Paragraph(bloque[1], D))
             primer_parr = False
+            parrafos_añadidos += 1
 
         else:  # párrafo
             estilo = P0 if primer_parr else P
             story.append(Paragraph(bloque[1], estilo))
             primer_parr = False
-
-    # Limitar a 10 páginas: el BaseDocTemplate lo gestiona con el contenido dado
-    # (el contenido de _parsear ya está acotado a lo que cabe en 6 páginas de texto)
+            parrafos_añadidos += 1
 
     doc.build(story)
     return buf.getvalue()

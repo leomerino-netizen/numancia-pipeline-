@@ -121,17 +121,21 @@ def _on_blank(c, doc): pass
 # ── Parser ────────────────────────────────────────────────────────────────────
 def _parsear(texto: str):
     cap_re = re.compile(
-        r'^(cap[ií]tulo\s+\w+[\w\s]{0,40}|chapter\s+\w+|\d{1,2}[\.º]\s+\w|parte\s+\w+)',
-        re.IGNORECASE
+        r'^(CAP[IÍ]TULO\s+\w+|CHAPTER\s+\w+|PARTE\s+\w+)',
     )
     bloques = []
+    contenido_iniciado = False
+
     for linea in texto.splitlines():
         linea = linea.strip()
         if not linea:
             continue
         if cap_re.match(linea) and len(linea) < 90:
+            contenido_iniciado = True
             partes = re.split(r'\s*[—\-–]\s*', linea, maxsplit=1)
             bloques.append(('cap', partes[0].strip(), partes[1].strip() if len(partes) > 1 else ''))
+        elif not contenido_iniciado:
+            continue
         elif linea.startswith('—') or linea.startswith('\u2014'):
             bloques.append(('dial', linea))
         else:

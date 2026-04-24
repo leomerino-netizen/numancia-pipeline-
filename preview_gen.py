@@ -105,24 +105,35 @@ def _make_frame(recto: bool):
 
 # ── Parser de texto ───────────────────────────────────────────────────────────
 def _parsear(texto: str):
-    """Devuelve lista de (tipo, texto): tipo = 'capitulo'|'parrafo'|'dialogo'"""
+    """
+    Devuelve lista de (tipo, ...): tipo = 'capitulo'|'parrafo'|'dialogo'.
+    Solo detecta capítulos en MAYÚSCULAS para evitar el índice inicial.
+    Ignora todo el contenido previo al primer capítulo en mayúsculas.
+    """
     bloques = []
+    # Solo capítulos en MAYÚSCULAS (evita el índice que va en minúscula)
     cap_re = re.compile(
-        r'^(cap[ií]tulo\s+\w+|chapter\s+\w+|\d+[\.º\-]\s|parte\s+\w+)',
-        re.IGNORECASE
+        r'^(CAP[IÍ]TULO\s+\w+|CHAPTER\s+\w+|PARTE\s+\w+)',
     )
+    contenido_iniciado = False
+
     for linea in texto.splitlines():
         linea = linea.strip()
         if not linea:
             continue
+
         if cap_re.match(linea) and len(linea) < 80:
-            # Separar número de subtítulo si hay coma o salto
-            partes = re.split(r'[—\-–]', linea, maxsplit=1)
+            contenido_iniciado = True
+            partes = re.split(r'\s*[—\-–]\s*', linea, maxsplit=1)
             bloques.append(('capitulo', partes[0].strip(), partes[1].strip() if len(partes) > 1 else ''))
-        elif linea.startswith('—') or linea.startswith('-'):
+        elif not contenido_iniciado:
+            # Ignorar todo (título, índice) hasta encontrar el primer CAPÍTULO
+            continue
+        elif linea.startswith('—') or linea.startswith('\u2014'):
             bloques.append(('dialogo', linea))
         else:
             bloques.append(('parrafo', linea))
+
     return bloques
 
 

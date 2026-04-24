@@ -112,9 +112,14 @@ def generar_informe(d: dict) -> bytes:
 
     # ── EVALUACIÓN ────────────────────────────────────────────────────────────
     story.append(Paragraph('EVALUACIÓN EDITORIAL', SEC))
-    eval_rows = [['Criterio', 'Valoración', 'Observación']]
+    def _stars(s):
+        """Convierte ★★★★☆ a '4 / 5' para compatibilidad con fuentes ReportLab."""
+        filled = s.count('★') if s else 0
+        return f"{filled} / 5"
+
+    eval_rows = [['Criterio', 'Puntuación', 'Observación']]
     for e in d.get('eval', []):
-        eval_rows.append([e.get('criterio',''), e.get('estrellas',''), e.get('obs','')])
+        eval_rows.append([e.get('criterio',''), _stars(e.get('estrellas','')), e.get('obs','')])
     ev = Table(
         [[Paragraph(r[0], S('eh', 'Helvetica-Bold', 7.5, 11) if i == 0 else HB),
           Paragraph(r[1], S('ec', 'Helvetica', 7.5, 11, align=TA_CENTER)),

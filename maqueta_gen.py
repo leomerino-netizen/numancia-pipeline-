@@ -123,7 +123,7 @@ def _parsear(texto: str):
     """Parser universal — mismo que preview_gen."""
     lineas = [l.strip() for l in texto.splitlines() if l.strip()]
     cap_num_re  = re.compile(r'^(CAP[IÍ]TULO\s+\w[\w\s]{0,30})', re.IGNORECASE)
-    cap_solo_re = re.compile(r'^Cap[ií]tulo\s+\d+\s*$', re.IGNORECASE)
+    cap_solo_re = re.compile(r'^Cap[ií]tulo\s+[\w]+\s*$', re.IGNORECASE)
     cap_punto_re= re.compile(r'^Cap[ií]tulo\s+\d+\.\s+\S', re.IGNORECASE)
 
     bloques = []

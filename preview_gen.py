@@ -118,7 +118,7 @@ def _parsear(texto: str):
 
     # Patrones de encabezado de capítulo en cuerpo (sin tabs = no es índice)
     cap_num_re  = re.compile(r'^(CAP[IÍ]TULO\s+\w[\w\s]{0,30}|CAPÍTULO\s+\w[\w\s]{0,30})', re.IGNORECASE)
-    cap_solo_re = re.compile(r'^Cap[ií]tulo\s+\d+\s*$', re.IGNORECASE)  # "Capítulo 1" solo
+    cap_solo_re = re.compile(r'^Cap[ií]tulo\s+[\w]+\s*$', re.IGNORECASE)  # "Capítulo 1" solo
     cap_punto_re= re.compile(r'^Cap[ií]tulo\s+\d+\.\s+\S', re.IGNORECASE)  # "Capítulo 1. Título"
 
     bloques = []
@@ -251,20 +251,42 @@ def generar_preview(texto: str, titulo: str, autor: str) -> bytes:
     story.append(PageBreak())
 
     bloques = _parsear(texto)
+
+    # SALTAR TABLA DE CONTENIDOS:
+    # Un capítulo es "real" si tiene párrafos/diálogos entre él y el capítulo anterior.
+    start_idx = 0
+    for i, b in enumerate(bloques):
+        if b[0] == 'capitulo' and i > 0:
+            prev_cap = max([j for j in range(i) if bloques[j][0] == 'capitulo'], default=-1)
+            items_between = [bloques[j][0] for j in range(prev_cap + 1, i)]
+            if 'parrafo' in items_between or 'dialogo' in items_between:
+                start_idx = i
+                break
+
+    # FALLBACK: si no hay capítulos, usar texto directamente
+    if not any(b[0] == 'capitulo' for b in bloques):
+        lineas = [l.strip() for l in texto.splitlines() if l.strip() and chr(9) not in l]
+        start = 0
+        for i, l in enumerate(lineas):
+            if len(l.split()) >= 6:
+                start = i
+                break
+        bloques = [('parrafo', l) for l in lineas[start:start+120]]
+        start_idx = 0
+
     primer_parr = True
     cap_encontrado = False
-    MAX_PARRAFOS = 80  # límite de párrafos para no sobrepasar 6 páginas
+    MAX_PARRAFOS = 100
 
-    parrafos_añadidos = 0
-    for bloque in bloques:
-        if parrafos_añadidos >= MAX_PARRAFOS:
+    parrafos_anyadidos = 0
+    for bloque in bloques[start_idx:]:
+        if parrafos_anyadidos >= MAX_PARRAFOS:
             break
 
         tipo = bloque[0]
 
         if tipo == 'capitulo':
             if not cap_encontrado:
-                # Primer capítulo: mostrar encabezado
                 cap_encontrado = True
                 primer_parr = True
                 story.append(Paragraph(bloque[1].upper(), CAP_N))
@@ -272,19 +294,18 @@ def generar_preview(texto: str, titulo: str, autor: str) -> bytes:
                     story.append(Paragraph(bloque[2], CAP_S))
                 story.append(NextPageTemplate('recto'))
             else:
-                # Segundo capítulo en adelante: parar
                 break
 
         elif tipo == 'dialogo':
             story.append(Paragraph(bloque[1], D))
             primer_parr = False
-            parrafos_añadidos += 1
+            parrafos_anyadidos += 1
 
-        else:  # párrafo
+        else:
             estilo = P0 if primer_parr else P
             story.append(Paragraph(bloque[1], estilo))
             primer_parr = False
-            parrafos_añadidos += 1
+            parrafos_anyadidos += 1
 
     doc.build(story)
     return buf.getvalue()

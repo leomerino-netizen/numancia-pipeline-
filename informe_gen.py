@@ -1,24 +1,26 @@
 """
-Genera el informe de viabilidad A4 PDF — estructura fija Editorial Numancia.
+Genera el informe de viabilidad A4 PDF — estilo corporativo Editorial Numancia.
+Azul #1565C0 / Blanco / Estrellas doradas #F9A825
 """
 import io
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import mm
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
-)
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
 
-# ── Colores ──────────────────────────────────────────────────────────────────
-NEGRO   = colors.HexColor('#1A1A1A')
-GRIS    = colors.HexColor('#777777')
-CREMA   = colors.HexColor('#F8F6F2')
-BLANCO  = colors.white
-GRIS_CL = colors.HexColor('#CCCCCC')
+AZUL       = colors.HexColor('#1565C0')
+AZUL_MED   = colors.HexColor('#1976D2')
+AZUL_CL    = colors.HexColor('#E3F2FD')
+AZUL_LINEA = colors.HexColor('#90CAF9')
+NEGRO      = colors.HexColor('#1A1A1A')
+GRIS       = colors.HexColor('#555555')
+BLANCO     = colors.white
+ORO        = '#F9A825'
+GRIS_STAR  = '#CCCCCC'
 
-W_DOC = A4[0] - 40*mm
+W_DOC = A4[0] - 36*mm
 
 
 def S(name, font='Helvetica', size=8, leading=11, color=NEGRO, align=TA_LEFT, **kw):
@@ -26,172 +28,197 @@ def S(name, font='Helvetica', size=8, leading=11, color=NEGRO, align=TA_LEFT, **
                           textColor=color, alignment=align, **kw)
 
 
+def _estrellas(pts_str):
+    """'4/5' → ★★★★☆ con estrellas doradas y vacías en gris claro"""
+    try:
+        n = int(str(pts_str).split('/')[0].strip())
+    except:
+        n = 0
+    llenas = '★' * n
+    vacias = '☆' * (5 - n)
+    return (f'<font name="Helvetica" size="13" color="{ORO}">{llenas}</font>'
+            f'<font name="Helvetica" size="13" color="{GRIS_STAR}">{vacias}</font><br/>'
+            f'<font name="Helvetica" size="7" color="#888888">{pts_str}</font>')
+
+
+def _sec(txt, color=AZUL):
+    t = Table([[Paragraph(
+        f'<font name="Helvetica-Bold" size="7.5" color="white">{txt}</font>',
+        S('sh', 'Helvetica-Bold', 7.5, 10, BLANCO))]],
+        colWidths=[W_DOC])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), color),
+        ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+    ]))
+    return t
+
+
+def _kv(rows, col1=42*mm):
+    data = [[Paragraph(k, S('hb','Helvetica-Bold',7.5,11,AZUL)),
+             Paragraph(v, S('hn','Helvetica',7.5,11,NEGRO))] for k, v in rows]
+    t = Table(data, colWidths=[col1, W_DOC - col1])
+    t.setStyle(TableStyle([
+        ('ROWBACKGROUNDS', (0,0), (-1,-1), [AZUL_CL, BLANCO]),
+        ('LEFTPADDING',  (0,0), (-1,-1), 6),
+        ('RIGHTPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING',   (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING',(0,0), (-1,-1), 4),
+        ('GRID', (0,0), (-1,-1), 0.3, AZUL_LINEA),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+    ]))
+    return t
+
+
 def generar_informe(d: dict) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
-        leftMargin=20*mm, rightMargin=20*mm,
-        topMargin=16*mm, bottomMargin=18*mm)
-
+        leftMargin=18*mm, rightMargin=18*mm,
+        topMargin=14*mm, bottomMargin=16*mm)
     story = []
 
-    # ── Cabecera bicolumna ────────────────────────────────────────────────────
+    # ── CABECERA ──────────────────────────────────────────────────────────────
     cab = Table([[
-        Paragraph('<font name="Helvetica-Bold" size="12">Editorial Numancia</font><br/>'
-                  '<font name="Helvetica" size="7.5" color="#777777">Grupo Printcolorweb.com</font>',
-                  S('x1', 'Helvetica', 12, 15)),
-        Paragraph('<font name="Helvetica-Bold" size="8">INFORME DE VIABILIDAD EDITORIAL</font><br/>'
-                  '<font name="Helvetica" size="7" color="#777777">Uso interno · Confidencial</font>',
-                  S('x2', 'Helvetica', 8, 11, align=TA_RIGHT))
-    ]], colWidths=[W_DOC * 0.5, W_DOC * 0.5])
+        Paragraph('<font name="Helvetica-Bold" size="14" color="white">Editorial Numancia</font><br/>'
+                  '<font name="Helvetica" size="8" color="#BBDEFB">Grupo Printcolorweb.com</font>',
+                  S('x1','Helvetica',14,17,BLANCO)),
+        Paragraph('<font name="Helvetica-Bold" size="8" color="white">INFORME DE VIABILIDAD EDITORIAL</font><br/>'
+                  '<font name="Helvetica" size="7" color="#BBDEFB">Documento confidencial · Uso interno</font>',
+                  S('x2','Helvetica',8,11,BLANCO,TA_RIGHT))
+    ]], colWidths=[W_DOC*0.55, W_DOC*0.45])
     cab.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('LEFTPADDING', (0,0), (-1,-1), 0),
-        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ('BACKGROUND',(0,0),(-1,-1),AZUL),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('LEFTPADDING',(0,0),(-1,-1),10),('RIGHTPADDING',(0,0),(-1,-1),10),
+        ('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),10),
     ]))
     story.append(cab)
-    story.append(HRFlowable(width='100%', thickness=2, color=NEGRO, spaceAfter=4))
 
-    # asesora + fecha
     meta = Table([[
-        Paragraph(f'<font name="Helvetica-Bold" size="7">Asesora:</font>'
+        Paragraph(f'<font name="Helvetica-Bold" size="7" color="#1565C0">Asesora:</font>'
                   f' <font name="Helvetica" size="7">{d.get("evaluado_por","")}</font>',
-                  S('m1', size=7)),
-        Paragraph(f'<font name="Helvetica-Bold" size="7">Fecha:</font>'
+                  S('m1','Helvetica',7,10)),
+        Paragraph(f'<font name="Helvetica-Bold" size="7" color="#1565C0">Fecha:</font>'
                   f' <font name="Helvetica" size="7">{d.get("fecha","")}</font>',
-                  S('m2', size=7, align=TA_RIGHT))
-    ]], colWidths=[W_DOC * 0.5, W_DOC * 0.5])
+                  S('m2','Helvetica',7,10,align=TA_RIGHT))
+    ]], colWidths=[W_DOC*0.6, W_DOC*0.4])
     meta.setStyle(TableStyle([
-        ('LEFTPADDING', (0,0), (-1,-1), 0),
-        ('RIGHTPADDING', (0,0), (-1,-1), 0),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('BACKGROUND',(0,0),(-1,-1),AZUL_CL),
+        ('LEFTPADDING',(0,0),(-1,-1),10),('RIGHTPADDING',(0,0),(-1,-1),10),
+        ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
     ]))
     story.append(meta)
+    story.append(Spacer(1,6))
 
-    # ── Título 28pt Times-BoldItalic ─────────────────────────────────────────
-    story.append(Paragraph(d.get('titulo', ''), S('tit', 'Times-BoldItalic', 28, 32, spaceBefore=2)))
-    story.append(Paragraph(d.get('genero', ''),
-        S('sub', 'Times-Italic', 10, 13, color=GRIS, spaceBefore=2, spaceAfter=8)))
-    story.append(HRFlowable(width='100%', thickness=0.5, color=GRIS_CL, spaceAfter=6))
+    # ── TÍTULO ────────────────────────────────────────────────────────────────
+    story.append(Paragraph(d.get('titulo',''),
+        S('tit','Times-BoldItalic',26,30,NEGRO,spaceBefore=2)))
+    story.append(Paragraph(d.get('genero',''),
+        S('gen','Times-Italic',10,13,AZUL_MED,spaceBefore=2,spaceAfter=6)))
+    story.append(HRFlowable(width='100%',thickness=2,color=AZUL,spaceAfter=6))
 
-    SEC = S('sec', 'Helvetica-Bold', 7.5, 10, spaceBefore=8, spaceAfter=3)
-    HB  = S('hb',  'Helvetica-Bold', 7.5, 11)
-    HN  = S('hn',  'Helvetica',      7.5, 11)
-
-    def tabla_kv(rows, col1=42*mm):
-        t = Table([[Paragraph(k, HB), Paragraph(v, HN)] for k, v in rows],
-                  colWidths=[col1, W_DOC - col1])
-        t.setStyle(TableStyle([
-            ('ROWBACKGROUNDS', (0,0), (-1,-1), [CREMA, BLANCO]),
-            ('LEFTPADDING',  (0,0), (-1,-1), 5),
-            ('RIGHTPADDING', (0,0), (-1,-1), 5),
-            ('TOPPADDING',   (0,0), (-1,-1), 3),
-            ('BOTTOMPADDING',(0,0), (-1,-1), 3),
-            ('GRID', (0,0), (-1,-1), 0.3, GRIS_CL),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ]))
-        return t
-
-    # ── FICHA TÉCNICA ─────────────────────────────────────────────────────────
-    story.append(Paragraph('FICHA TÉCNICA', SEC))
-    story.append(tabla_kv([
-        ('Título',          d.get('titulo', '')),
-        ('Autor/a',         d.get('autor', '')),
-        ('Género',          d.get('genero', '')),
-        ('Extensión',       d.get('extension', '')),
-        ('Ambientación',    d.get('ambientacion', '')),
-        ('Fecha recepción', d.get('fecha', '')),
-        ('Evaluado por',    d.get('evaluado_por', '')),
+    # ── FICHA ─────────────────────────────────────────────────────────────────
+    story.append(_sec('FICHA TÉCNICA'))
+    story.append(_kv([
+        ('Título',          d.get('titulo','')),
+        ('Autor/a',         d.get('autor','')),
+        ('Género',          d.get('genero','')),
+        ('Extensión',       d.get('extension','')),
+        ('Ambientación',    d.get('ambientacion','')),
+        ('Fecha recepción', d.get('fecha','')),
+        ('Evaluado por',    d.get('evaluado_por','')),
     ]))
+    story.append(Spacer(1,6))
 
     # ── SINOPSIS ──────────────────────────────────────────────────────────────
-    SIN = S('sin', 'Times-Italic', 9.5, 13, color=NEGRO, align=TA_JUSTIFY,
-            leftIndent=8*mm, rightIndent=4*mm, spaceAfter=5)
-    story.append(Paragraph('SINOPSIS', SEC))
-    for key in ('sinopsis_i', 'sinopsis_ii', 'sinopsis_iii'):
-        story.append(Paragraph(f'<i>{d.get(key, "")}</i>', SIN))
+    story.append(_sec('SINOPSIS'))
+    SIN = S('sin','Times-Italic',9.5,14,NEGRO,TA_JUSTIFY,
+            leftIndent=6*mm,rightIndent=4*mm,spaceAfter=4,spaceBefore=4)
+    for key in ('sinopsis_i','sinopsis_ii','sinopsis_iii'):
+        if d.get(key):
+            story.append(Paragraph(f'<i>{d[key]}</i>', SIN))
+    story.append(Spacer(1,6))
 
     # ── EVALUACIÓN ────────────────────────────────────────────────────────────
-    story.append(Paragraph('EVALUACIÓN EDITORIAL', SEC))
-    def _stars(s):
-        """Convierte ★★★★☆ a '4 / 5' para compatibilidad con fuentes ReportLab."""
-        filled = s.count('★') if s else 0
-        return f"{filled} / 5"
-
-    eval_rows = [['Criterio', 'Puntuación', 'Observación']]
+    story.append(_sec('EVALUACIÓN EDITORIAL'))
+    ev_rows = [[
+        Paragraph('<font name="Helvetica-Bold" size="7.5" color="white">Criterio</font>',    S('eh','Helvetica-Bold',7.5,11,BLANCO)),
+        Paragraph('<font name="Helvetica-Bold" size="7.5" color="white">Valoración</font>',  S('ep','Helvetica-Bold',7.5,11,BLANCO,TA_CENTER)),
+        Paragraph('<font name="Helvetica-Bold" size="7.5" color="white">Observación</font>', S('eo','Helvetica-Bold',7.5,11,BLANCO)),
+    ]]
     for e in d.get('eval', []):
-        eval_rows.append([e.get('criterio',''), _stars(e.get('estrellas','')), e.get('obs','')])
-    ev = Table(
-        [[Paragraph(r[0], S('eh', 'Helvetica-Bold', 7.5, 11) if i == 0 else HB),
-          Paragraph(r[1], S('ec', 'Helvetica', 7.5, 11, align=TA_CENTER)),
-          Paragraph(r[2], HN)]
-         for i, r in enumerate(eval_rows)],
-        colWidths=[40*mm, 24*mm, W_DOC - 64*mm]
-    )
+        ev_rows.append([
+            Paragraph(e.get('criterio',''), S('ec','Helvetica-Bold',7.5,11,NEGRO)),
+            Paragraph(_estrellas(e.get('estrellas','')), S('ep2','Helvetica',13,16,AZUL,TA_CENTER)),
+            Paragraph(e.get('obs',''), S('eo2','Helvetica',7.5,11,GRIS)),
+        ])
+    ev = Table(ev_rows, colWidths=[42*mm, 30*mm, W_DOC-72*mm])
     ev.setStyle(TableStyle([
-        ('BACKGROUND',  (0,0), (-1,0), NEGRO),
-        ('TEXTCOLOR',   (0,0), (-1,0), BLANCO),
-        ('FONTNAME',    (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE',    (0,0), (-1,-1), 7.5),
-        ('LEADING',     (0,0), (-1,-1), 11),
-        ('ROWBACKGROUNDS', (0,1), (-1,-1), [CREMA, BLANCO]),
-        ('LEFTPADDING', (0,0), (-1,-1), 5),
-        ('RIGHTPADDING',(0,0), (-1,-1), 5),
-        ('TOPPADDING',  (0,0), (-1,-1), 3),
-        ('BOTTOMPADDING',(0,0), (-1,-1), 3),
-        ('GRID', (0,0), (-1,-1), 0.3, GRIS_CL),
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('ALIGN', (1,1), (1,-1), 'CENTER'),
+        ('BACKGROUND',(0,0),(-1,0),AZUL),
+        ('ROWBACKGROUNDS',(0,1),(-1,-1),[AZUL_CL,BLANCO]),
+        ('FONTSIZE',(0,0),(-1,-1),7.5),('LEADING',(0,0),(-1,-1),11),
+        ('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),6),
+        ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
+        ('GRID',(0,0),(-1,-1),0.3,AZUL_LINEA),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('ALIGN',(1,0),(1,-1),'CENTER'),
     ]))
     story.append(ev)
+    story.append(Spacer(1,6))
 
-    # ── VEREDICTO — caja negra texto blanco ───────────────────────────────────
-    story.append(Spacer(1, 6))
-    story.append(Paragraph('VEREDICTO', SEC))
-    story.append(Spacer(1, 3))
-    verd_box = Table([
+    # ── VEREDICTO ─────────────────────────────────────────────────────────────
+    story.append(_sec('VEREDICTO'))
+    verd = Table([
         [Paragraph(f'✓ {d.get("veredicto","CON MEJORAS")}',
-                   S('vb', 'Helvetica-Bold', 12, 15, color=BLANCO, align=TA_CENTER))],
-        [Paragraph(d.get('veredicto_texto', ''),
-                   S('vt', 'Helvetica', 8, 12, color=NEGRO, align=TA_JUSTIFY,
-                     spaceBefore=0, spaceAfter=4))],
+                   S('vb','Helvetica-Bold',13,16,BLANCO,TA_CENTER))],
+        [Paragraph(d.get('veredicto_texto',''),
+                   S('vt','Helvetica',8.5,13,NEGRO,TA_JUSTIFY))],
     ], colWidths=[W_DOC])
-    verd_box.setStyle(TableStyle([
-        ('BACKGROUND',    (0,0), (0,0), NEGRO),
-        ('BACKGROUND',    (0,1), (0,1), BLANCO),
-        ('BOX',           (0,0), (-1,-1), 2, NEGRO),
-        ('TOPPADDING',    (0,0), (0,0), 8),
-        ('BOTTOMPADDING', (0,0), (0,0), 8),
-        ('TOPPADDING',    (0,1), (0,1), 7),
-        ('BOTTOMPADDING', (0,1), (0,1), 7),
-        ('LEFTPADDING',   (0,0), (-1,-1), 10),
-        ('RIGHTPADDING',  (0,0), (-1,-1), 10),
+    verd.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(0,0),AZUL),
+        ('BACKGROUND',(0,1),(0,1),AZUL_CL),
+        ('TOPPADDING',(0,0),(0,0),9),('BOTTOMPADDING',(0,0),(0,0),9),
+        ('TOPPADDING',(0,1),(0,1),8),('BOTTOMPADDING',(0,1),(0,1),8),
+        ('LEFTPADDING',(0,0),(-1,-1),10),('RIGHTPADDING',(0,0),(-1,-1),10),
+        ('BOX',(0,0),(-1,-1),1.5,AZUL),
     ]))
-    story.append(verd_box)
+    story.append(verd)
+    story.append(Spacer(1,6))
 
-    # ── PÚBLICO OBJETIVO ──────────────────────────────────────────────────────
-    story.append(Paragraph('PÚBLICO OBJETIVO', SEC))
-    story.append(tabla_kv([
-        ('Lector primario',   d.get('lector_primario', '')),
-        ('Lector secundario', d.get('lector_secundario', '')),
-        ('Comparable',        d.get('comparable', '')),
-        ('Precio sugerido',   d.get('precio', '')),
+    # ── PÚBLICO ───────────────────────────────────────────────────────────────
+    story.append(_sec('PÚBLICO OBJETIVO'))
+    story.append(_kv([
+        ('Lector primario',   d.get('lector_primario','')),
+        ('Lector secundario', d.get('lector_secundario','')),
+        ('Comparable',        d.get('comparable','')),
+        ('Precio sugerido',   d.get('precio','')),
     ], col1=40*mm))
+    story.append(Spacer(1,6))
 
     # ── NOTAS ─────────────────────────────────────────────────────────────────
     notas = d.get('notas', [])
     if notas:
-        story.append(Paragraph('NOTAS', SEC))
-        notas_html = ''.join(f'<b>{i+1}.</b> {n}<br/>' for i, n in enumerate(notas))
-        story.append(Paragraph(notas_html,
-            S('not', 'Helvetica', 7.5, 11, color=NEGRO)))
+        story.append(_sec('NOTAS EDITORIALES', color=colors.HexColor('#0D47A1')))
+        for i, nota in enumerate(notas):
+            story.append(Paragraph(
+                f'<font name="Helvetica-Bold" color="#1565C0">{i+1}.</font> {nota}',
+                S('nota','Helvetica',7.5,12,NEGRO,spaceBefore=3)))
+        story.append(Spacer(1,8))
 
-    # ── Pie confidencial ──────────────────────────────────────────────────────
-    story.append(Spacer(1, 10))
-    story.append(HRFlowable(width='100%', thickness=0.5, color=GRIS_CL, spaceAfter=4))
-    story.append(Paragraph(
-        'Editorial Numancia · Grupo Printcolorweb.com · Barcelona · '
-        'Documento de uso interno — confidencial. Prohibida su distribución sin autorización expresa.',
-        S('pie', 'Helvetica', 6.5, 9, color=GRIS, align=TA_CENTER)))
+    # ── PIE ───────────────────────────────────────────────────────────────────
+    pie = Table([[
+        Paragraph('<font name="Helvetica" size="6.5" color="white">Editorial Numancia · Grupo Printcolorweb.com · Barcelona</font>',
+                  S('p1','Helvetica',6.5,9,BLANCO)),
+        Paragraph('<font name="Helvetica" size="6.5" color="white">Documento confidencial — uso interno exclusivo</font>',
+                  S('p2','Helvetica',6.5,9,BLANCO,TA_RIGHT)),
+    ]], colWidths=[W_DOC*0.6, W_DOC*0.4])
+    pie.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,-1),AZUL),
+        ('LEFTPADDING',(0,0),(-1,-1),10),('RIGHTPADDING',(0,0),(-1,-1),10),
+        ('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),
+    ]))
+    story.append(pie)
 
     doc.build(story)
     return buf.getvalue()

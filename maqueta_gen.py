@@ -120,26 +120,48 @@ def _on_blank(c, doc): pass
 
 # ── Parser ────────────────────────────────────────────────────────────────────
 def _parsear(texto: str):
-    cap_re = re.compile(
-        r'^(CAP[IÍ]TULO\s+\w+|CHAPTER\s+\w+|PARTE\s+\w+)',
-    )
-    bloques = []
-    contenido_iniciado = False
+    """Parser universal — mismo que preview_gen."""
+    lineas = [l.strip() for l in texto.splitlines() if l.strip()]
+    cap_num_re  = re.compile(r'^(CAP[IÍ]TULO\s+\w[\w\s]{0,30})', re.IGNORECASE)
+    cap_solo_re = re.compile(r'^Cap[ií]tulo\s+\d+\s*$', re.IGNORECASE)
+    cap_punto_re= re.compile(r'^Cap[ií]tulo\s+\d+\.\s+\S', re.IGNORECASE)
 
-    for linea in texto.splitlines():
-        linea = linea.strip()
-        if not linea:
-            continue
-        if cap_re.match(linea) and len(linea) < 90:
-            contenido_iniciado = True
-            partes = re.split(r'\s*[—\-–]\s*', linea, maxsplit=1)
-            bloques.append(('cap', partes[0].strip(), partes[1].strip() if len(partes) > 1 else ''))
-        elif not contenido_iniciado:
-            continue
-        elif linea.startswith('—') or linea.startswith('\u2014'):
-            bloques.append(('dial', linea))
+    bloques = []
+    contenido = False
+    i = 0
+    while i < len(lineas):
+        l = lineas[i]
+        if '\t' in l:
+            i += 1; continue
+
+        es_cap = False
+        cap_num = ''; cap_sub = ''
+
+        if cap_solo_re.match(l) and len(l) < 40:
+            cap_num = l
+            cap_sub = lineas[i+1] if i+1 < len(lineas) and '\t' not in lineas[i+1] else ''
+            es_cap = True
+            i += 2 if cap_sub else 1
+        elif cap_punto_re.match(l) and len(l) < 100:
+            partes = re.split(r'\.\s+', l, maxsplit=1)
+            cap_num = partes[0]; cap_sub = partes[1] if len(partes) > 1 else ''
+            es_cap = True; i += 1
+        elif cap_num_re.match(l) and len(l) < 80 and '\t' not in l:
+            partes = re.split(r'\s*[—\-–]\s*', l, maxsplit=1)
+            cap_num = partes[0]; cap_sub = partes[1] if len(partes) > 1 else ''
+            es_cap = True; i += 1
         else:
-            bloques.append(('parr', linea))
+            i += 1
+
+        if es_cap:
+            contenido = True
+            bloques.append(('cap', cap_num.strip(), cap_sub.strip()))
+        elif contenido:
+            if l.startswith('—') or l.startswith('\u2014'):
+                bloques.append(('dial', l))
+            else:
+                bloques.append(('parr', l))
+
     return bloques
 
 

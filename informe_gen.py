@@ -29,25 +29,24 @@ def S(name, font='Helvetica', size=8, leading=11, color=NEGRO, align=TA_LEFT, **
 def _estrellas(pts_str):
     """
     Acepta '4/5', '★★★★☆', '4 / 5' o cualquier variante.
-    Devuelve HTML con estrellas doradas (llenas) y grises (vacías).
+    Usa ★ doradas para llenas y puntos grises para vacías (máxima compatibilidad).
     """
     s = str(pts_str).strip()
-    # Contar estrellas Unicode directamente
     if '★' in s or '☆' in s:
         n = s.count('★')
     else:
-        # Formato "4/5" o "4 / 5"
         try:
             n = int(s.replace(' ','').split('/')[0])
         except:
             n = 0
     n = max(0, min(5, n))
-    llenas = '&#9733;' * n          # ★ en HTML entity (más compatible)
-    vacias = '&#9734;' * (5 - n)   # ☆
+    llenas = '&#9733;' * n
+    # Usar guiones cortos como estrellas vacías — compatibles con todas las fuentes
+    vacias = '<font color="#DDDDDD">&#9733;</font>' * (5 - n)
     return (
         f'<font name="Helvetica" size="14" color="#F9A825">{llenas}</font>'
-        f'<font name="Helvetica" size="14" color="#CCCCCC">{vacias}</font>'
-        f'<br/><font name="Helvetica" size="7" color="#888888">{n}/5</font>'
+        + vacias.replace('<font color=', '<font name="Helvetica" size="14" color=')
+        + f'<br/><font name="Helvetica" size="7" color="#888888">{n}/5</font>'
     )
 
 

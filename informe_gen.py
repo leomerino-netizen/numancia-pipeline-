@@ -1,6 +1,6 @@
 """
 Genera el informe de viabilidad A4 PDF — estilo corporativo Editorial Numancia.
-Azul #1565C0 / Blanco / Estrellas doradas #F9A825
+Azul #1565C0 / Blanco / Estrellas doradas
 """
 import io
 from reportlab.lib.pagesizes import A4
@@ -17,8 +17,6 @@ AZUL_LINEA = colors.HexColor('#90CAF9')
 NEGRO      = colors.HexColor('#1A1A1A')
 GRIS       = colors.HexColor('#555555')
 BLANCO     = colors.white
-ORO        = '#F9A825'
-GRIS_STAR  = '#CCCCCC'
 
 W_DOC = A4[0] - 36*mm
 
@@ -29,16 +27,28 @@ def S(name, font='Helvetica', size=8, leading=11, color=NEGRO, align=TA_LEFT, **
 
 
 def _estrellas(pts_str):
-    """'4/5' → ★★★★☆ con estrellas doradas y vacías en gris claro"""
-    try:
-        n = int(str(pts_str).split('/')[0].strip())
-    except:
-        n = 0
-    llenas = '★' * n
-    vacias = '☆' * (5 - n)
-    return (f'<font name="Helvetica" size="13" color="{ORO}">{llenas}</font>'
-            f'<font name="Helvetica" size="13" color="{GRIS_STAR}">{vacias}</font><br/>'
-            f'<font name="Helvetica" size="7" color="#888888">{pts_str}</font>')
+    """
+    Acepta '4/5', '★★★★☆', '4 / 5' o cualquier variante.
+    Devuelve HTML con estrellas doradas (llenas) y grises (vacías).
+    """
+    s = str(pts_str).strip()
+    # Contar estrellas Unicode directamente
+    if '★' in s or '☆' in s:
+        n = s.count('★')
+    else:
+        # Formato "4/5" o "4 / 5"
+        try:
+            n = int(s.replace(' ','').split('/')[0])
+        except:
+            n = 0
+    n = max(0, min(5, n))
+    llenas = '&#9733;' * n          # ★ en HTML entity (más compatible)
+    vacias = '&#9734;' * (5 - n)   # ☆
+    return (
+        f'<font name="Helvetica" size="14" color="#F9A825">{llenas}</font>'
+        f'<font name="Helvetica" size="14" color="#CCCCCC">{vacias}</font>'
+        f'<br/><font name="Helvetica" size="7" color="#888888">{n}/5</font>'
+    )
 
 
 def _sec(txt, color=AZUL):
@@ -78,7 +88,7 @@ def generar_informe(d: dict) -> bytes:
         topMargin=14*mm, bottomMargin=16*mm)
     story = []
 
-    # ── CABECERA ──────────────────────────────────────────────────────────────
+    # CABECERA
     cab = Table([[
         Paragraph('<font name="Helvetica-Bold" size="14" color="white">Editorial Numancia</font><br/>'
                   '<font name="Helvetica" size="8" color="#BBDEFB">Grupo Printcolorweb.com</font>',
@@ -111,14 +121,14 @@ def generar_informe(d: dict) -> bytes:
     story.append(meta)
     story.append(Spacer(1,6))
 
-    # ── TÍTULO ────────────────────────────────────────────────────────────────
+    # TÍTULO
     story.append(Paragraph(d.get('titulo',''),
         S('tit','Times-BoldItalic',26,30,NEGRO,spaceBefore=2)))
     story.append(Paragraph(d.get('genero',''),
         S('gen','Times-Italic',10,13,AZUL_MED,spaceBefore=2,spaceAfter=6)))
     story.append(HRFlowable(width='100%',thickness=2,color=AZUL,spaceAfter=6))
 
-    # ── FICHA ─────────────────────────────────────────────────────────────────
+    # FICHA
     story.append(_sec('FICHA TÉCNICA'))
     story.append(_kv([
         ('Título',          d.get('titulo','')),
@@ -131,7 +141,7 @@ def generar_informe(d: dict) -> bytes:
     ]))
     story.append(Spacer(1,6))
 
-    # ── SINOPSIS ──────────────────────────────────────────────────────────────
+    # SINOPSIS
     story.append(_sec('SINOPSIS'))
     SIN = S('sin','Times-Italic',9.5,14,NEGRO,TA_JUSTIFY,
             leftIndent=6*mm,rightIndent=4*mm,spaceAfter=4,spaceBefore=4)
@@ -140,20 +150,23 @@ def generar_informe(d: dict) -> bytes:
             story.append(Paragraph(f'<i>{d[key]}</i>', SIN))
     story.append(Spacer(1,6))
 
-    # ── EVALUACIÓN ────────────────────────────────────────────────────────────
+    # EVALUACIÓN
     story.append(_sec('EVALUACIÓN EDITORIAL'))
     ev_rows = [[
-        Paragraph('<font name="Helvetica-Bold" size="7.5" color="white">Criterio</font>',    S('eh','Helvetica-Bold',7.5,11,BLANCO)),
-        Paragraph('<font name="Helvetica-Bold" size="7.5" color="white">Valoración</font>',  S('ep','Helvetica-Bold',7.5,11,BLANCO,TA_CENTER)),
-        Paragraph('<font name="Helvetica-Bold" size="7.5" color="white">Observación</font>', S('eo','Helvetica-Bold',7.5,11,BLANCO)),
+        Paragraph('<font name="Helvetica-Bold" size="7.5" color="white">Criterio</font>',
+                  S('eh','Helvetica-Bold',7.5,11,BLANCO)),
+        Paragraph('<font name="Helvetica-Bold" size="7.5" color="white">Valoración</font>',
+                  S('ep','Helvetica-Bold',7.5,11,BLANCO,TA_CENTER)),
+        Paragraph('<font name="Helvetica-Bold" size="7.5" color="white">Observación</font>',
+                  S('eo','Helvetica-Bold',7.5,11,BLANCO)),
     ]]
     for e in d.get('eval', []):
         ev_rows.append([
             Paragraph(e.get('criterio',''), S('ec','Helvetica-Bold',7.5,11,NEGRO)),
-            Paragraph(_estrellas(e.get('estrellas','')), S('ep2','Helvetica',13,16,AZUL,TA_CENTER)),
+            Paragraph(_estrellas(e.get('estrellas','')), S('ep2','Helvetica',14,18,AZUL,TA_CENTER)),
             Paragraph(e.get('obs',''), S('eo2','Helvetica',7.5,11,GRIS)),
         ])
-    ev = Table(ev_rows, colWidths=[42*mm, 30*mm, W_DOC-72*mm])
+    ev = Table(ev_rows, colWidths=[42*mm, 32*mm, W_DOC-74*mm])
     ev.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),AZUL),
         ('ROWBACKGROUNDS',(0,1),(-1,-1),[AZUL_CL,BLANCO]),
@@ -167,7 +180,7 @@ def generar_informe(d: dict) -> bytes:
     story.append(ev)
     story.append(Spacer(1,6))
 
-    # ── VEREDICTO ─────────────────────────────────────────────────────────────
+    # VEREDICTO
     story.append(_sec('VEREDICTO'))
     verd = Table([
         [Paragraph(f'✓ {d.get("veredicto","CON MEJORAS")}',
@@ -186,7 +199,7 @@ def generar_informe(d: dict) -> bytes:
     story.append(verd)
     story.append(Spacer(1,6))
 
-    # ── PÚBLICO ───────────────────────────────────────────────────────────────
+    # PÚBLICO
     story.append(_sec('PÚBLICO OBJETIVO'))
     story.append(_kv([
         ('Lector primario',   d.get('lector_primario','')),
@@ -196,7 +209,7 @@ def generar_informe(d: dict) -> bytes:
     ], col1=40*mm))
     story.append(Spacer(1,6))
 
-    # ── NOTAS ─────────────────────────────────────────────────────────────────
+    # NOTAS
     notas = d.get('notas', [])
     if notas:
         story.append(_sec('NOTAS EDITORIALES', color=colors.HexColor('#0D47A1')))
@@ -206,7 +219,7 @@ def generar_informe(d: dict) -> bytes:
                 S('nota','Helvetica',7.5,12,NEGRO,spaceBefore=3)))
         story.append(Spacer(1,8))
 
-    # ── PIE ───────────────────────────────────────────────────────────────────
+    # PIE
     pie = Table([[
         Paragraph('<font name="Helvetica" size="6.5" color="white">Editorial Numancia · Grupo Printcolorweb.com · Barcelona</font>',
                   S('p1','Helvetica',6.5,9,BLANCO)),

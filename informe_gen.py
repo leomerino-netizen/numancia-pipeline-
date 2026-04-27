@@ -35,6 +35,12 @@ LOGO_PATH = next((p for p in [
     os.path.join(_HERE, 'logo_numancia_bn.png'),
 ] if os.path.isfile(p)), None)
 
+# Favicon cuadrado para miniatura del PDF
+FAVICON_PATH = next((p for p in [
+    os.path.join(_HERE, 'fotos', 'favicon_numancia.png'),
+    os.path.join(_HERE, 'favicon_numancia.png'),
+] if os.path.isfile(p)), None)
+
 W_DOC = A4[0] - 36*mm
 
 
@@ -256,7 +262,10 @@ def generar_informe(d: dict) -> bytes:
         leftMargin=18*mm, rightMargin=18*mm,
         topMargin=12*mm, bottomMargin=14*mm,
         title=f"Informe de lectura · {d.get('titulo','')}",
-        author='Editorial Numancia')
+        author='Editorial Numancia',
+        subject=f"Informe editorial de {d.get('titulo','')}",
+        creator='Editorial Numancia · Grupo Printcolorweb.com',
+        producer='Editorial Numancia')
     story = []
 
     # ── 1. Cabecera editorial ────────────────────────────────────────────────
@@ -369,7 +378,67 @@ def generar_informe(d: dict) -> bytes:
         S('pie','Helvetica',7.5,10,GRIS,TA_CENTER)))
 
     doc.build(story)
-    return buf.getvalue()
+
+    # Embeber thumbnail (favicon) en los metadatos PDF
+    pdf_bytes = buf.getvalue()
+    if FAVICON_PATH:
+        try:
+            pdf_bytes = _embed_thumbnail(pdf_bytes, FAVICON_PATH)
+        except Exception as e:
+            print(f'[informe_gen] Thumbnail no embebido: {e}')
+
+    return pdf_bytes
+
+
+def _embed_thumbnail(pdf_bytes: bytes, icon_path: str) -> bytes:
+    """
+    Embebe un icono PNG como miniatura en el primer page del PDF.
+    Usa el formato /Thumb que ReportLab no expone directamente.
+    Si pypdf está disponible, lo usa; si no, devuelve el PDF intacto.
+    """
+    try:
+        from pypdf import PdfReader, PdfWriter
+        from pypdf.generic import (NameObject, NumberObject, ByteStringObject,
+                                    DictionaryObject, IndirectObject)
+        from PIL import Image as PILImage
+        import io as _io
+
+        # Cargar el icono y convertir a stream JPEG (PDF prefiere JPEG para thumbs)
+        img = PILImage.open(icon_path).convert('RGB')
+        img.thumbnail((128, 128), PILImage.LANCZOS)
+        buf = _io.BytesIO()
+        img.save(buf, 'JPEG', quality=85)
+        jpg_data = buf.getvalue()
+        w, h = img.size
+
+        reader = PdfReader(_io.BytesIO(pdf_bytes))
+        writer = PdfWriter(clone_from=reader)
+
+        # Crear el stream del thumbnail
+        from pypdf.generic import StreamObject
+        thumb_stream = StreamObject()
+        thumb_stream._data = jpg_data
+        thumb_stream.update({
+            NameObject('/Type'):             NameObject('/XObject'),
+            NameObject('/Subtype'):          NameObject('/Image'),
+            NameObject('/Width'):            NumberObject(w),
+            NameObject('/Height'):           NumberObject(h),
+            NameObject('/ColorSpace'):       NameObject('/DeviceRGB'),
+            NameObject('/BitsPerComponent'): NumberObject(8),
+            NameObject('/Filter'):           NameObject('/DCTDecode'),
+        })
+        thumb_ref = writer._add_object(thumb_stream)
+
+        # Asignar el thumbnail a la primera página
+        page = writer.pages[0]
+        page[NameObject('/Thumb')] = thumb_ref
+
+        out = _io.BytesIO()
+        writer.write(out)
+        return out.getvalue()
+    except ImportError:
+        # pypdf no disponible — devolver PDF original
+        return pdf_bytes
 
 
 if __name__ == '__main__':

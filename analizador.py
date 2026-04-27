@@ -86,7 +86,7 @@ def analizar_manuscrito(ms, titulo: str, autor: str) -> dict:
     try:
         client = Anthropic(api_key=ANTHROPIC_KEY)
         msg = client.messages.create(
-            model='claude-opus-4-5',
+            model='claude-sonnet-4-5',
             max_tokens=2500,
             messages=[{
                 'role': 'user',
@@ -104,7 +104,7 @@ def analizar_manuscrito(ms, titulo: str, autor: str) -> dict:
             raise ValueError("No JSON encontrado en respuesta")
         return json.loads(m.group())
     except Exception as e:
-        print(f"[analizador] Fallback por error: {e}")
+        import traceback; traceback.print_exc(); print(f'[analizador] Fallback por error: {e}', flush=True)
         return _fallback_profesional(titulo, autor, palabras, capitulos, extracto)
 
 

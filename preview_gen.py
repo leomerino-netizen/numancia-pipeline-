@@ -13,14 +13,14 @@ from reportlab.platypus import (
 )
 from maqueta_gen import (
     mk_frame, hdr_b, hdr_c, estilos, DropCap, _parse_texto,
-    BF, HF, CT, CG, CL, CUERPO_W,
+    BF, BF_I, HF, HF_B, HF_I, HF_BI, CT, CG, CL, CUERPO_W,
     AW, AH, M_INT, M_EXT, M_TOP, M_BOT
 )
 
 def _wm(titulo, autor):
     def fn(c, doc):
         c.saveState()
-        c.setFont('LS-B', 22)
+        c.setFont(HF_B, 22)
         c.setFillColorRGB(0.72, 0.72, 0.72, 0.16)
         c.translate(AW/2, AH/2)
         c.rotate(36)
@@ -43,7 +43,7 @@ def _wm_cab(titulo, autor):
             lm = M_INT if recto else M_EXT
             rm = M_EXT  if recto else M_INT
             yh = AH - M_TOP + 4
-            c.setFont('LS-I', 7.5); c.setFillColor(CG)
+            c.setFont(HF_I, 7.5); c.setFillColor(CG)
             if recto:
                 c.drawRightString(AW-rm, yh, titulo[:50].upper())
             elif autor:

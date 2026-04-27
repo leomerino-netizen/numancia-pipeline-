@@ -19,21 +19,66 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.pdfmetrics import registerFontFamily
 
-# ── Registro de fuentes ───────────────────────────────────────────────────────
+# ── Registro de fuentes con fallback robusto ─────────────────────────────────
 def _reg(n, p):
-    try: pdfmetrics.registerFont(TTFont(n, p))
+    try:
+        pdfmetrics.registerFont(TTFont(n, p))
+        return True
+    except:
+        return False
+
+# Intentar fuentes externas
+_FONT_PATHS = {
+    'Lora':  '/usr/share/fonts/truetype/google-fonts/Lora-Variable.ttf',
+    'LoraI': '/usr/share/fonts/truetype/google-fonts/Lora-Italic-Variable.ttf',
+    'LS':    '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf',
+    'LS-B':  '/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf',
+    'LS-I':  '/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf',
+    'LS-BI': '/usr/share/fonts/truetype/liberation/LiberationSerif-BoldItalic.ttf',
+}
+_REGISTERED = {n: _reg(n, p) for n, p in _FONT_PATHS.items()}
+
+# Verificar qué fuentes están disponibles realmente
+def _font_ok(name):
+    try:
+        pdfmetrics.getFont(name)
+        return True
+    except:
+        return False
+
+# Fuentes a usar — fallback a Times/Helvetica integradas de ReportLab
+if _font_ok('Lora'):
+    BF   = 'Lora'
+    BF_I = 'LoraI'
+else:
+    BF   = 'Times-Roman'
+    BF_I = 'Times-Italic'
+    # Alias para que el código funcione igual
+    try:
+        pdfmetrics.registerFont(TTFont(BF_I, '/usr/share/fonts/truetype/google-fonts/Lora-Italic-Variable.ttf'))
+    except:
+        pass
+
+if _font_ok('LS') and _font_ok('LS-B'):
+    HF    = 'LS'
+    HF_B  = 'LS-B'
+    HF_I  = 'LS-I'
+    HF_BI = 'LS-BI'
+else:
+    HF    = 'Helvetica'
+    HF_B  = 'Helvetica-Bold'
+    HF_I  = 'Helvetica-Oblique'
+    HF_BI = 'Helvetica-BoldOblique'
+    # Crear alias LS-* → Helvetica para el código que los referencia
+    from reportlab.pdfbase.pdfmetrics import registerFontFamily as _rff
+    try:
+        _rff('LS', normal='Helvetica', bold='Helvetica-Bold',
+             italic='Helvetica-Oblique', boldItalic='Helvetica-BoldOblique')
     except: pass
 
-_reg('Lora',  '/usr/share/fonts/truetype/google-fonts/Lora-Variable.ttf')
-_reg('LoraI', '/usr/share/fonts/truetype/google-fonts/Lora-Italic-Variable.ttf')
-_reg('LS',    '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf')
-_reg('LS-B',  '/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf')
-_reg('LS-I',  '/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf')
-_reg('LS-BI', '/usr/share/fonts/truetype/liberation/LiberationSerif-BoldItalic.ttf')
-
 try:
-    registerFontFamily('Lora', normal='Lora', bold='LS-B', italic='LoraI', boldItalic='LS-BI')
-    registerFontFamily('LS',   normal='LS',   bold='LS-B', italic='LS-I',  boldItalic='LS-BI')
+    registerFontFamily('Lora', normal=BF, bold=HF_B,  italic=BF_I,  boldItalic=HF_BI)
+    registerFontFamily('LS',   normal=HF, bold=HF_B,  italic=HF_I,  boldItalic=HF_BI)
 except: pass
 
 # ── Dimensiones PRH / A5 ─────────────────────────────────────────────────────
@@ -195,16 +240,16 @@ def estilos():
     # ── Capítulos ─────────────────────────────────────────────────────────────
     'cap_lbl': S('cap_lbl', HF, 8, 11, CG, TA_CENTER,
                  spaceBefore=30*mm, spaceAfter=1.5*mm, letterSpacing=4),
-    'cap_num': S('cap_num', f'{HF}-B', 28, 34, CT, TA_CENTER,
+    'cap_num': S('cap_num', HF_B, 28, 34, CT, TA_CENTER,
                  spaceBefore=2*mm, spaceAfter=3*mm),
-    'cap_sub': S('cap_sub', f'{HF}-I', 10, 14, CG, TA_CENTER,
+    'cap_sub': S('cap_sub', HF_I, 10, 14, CG, TA_CENTER,
                  spaceBefore=0, spaceAfter=10*mm),
 
     # ── Portadas ──────────────────────────────────────────────────────────────
-    'port_t':  S('port_t',  f'{HF}-B', 22, 28, CT, TA_CENTER, spaceBefore=46*mm),
-    'port_g':  S('port_g',  f'{HF}-I', 9,  13, CG, TA_CENTER, spaceBefore=4*mm),
+    'port_t':  S('port_t',  HF_B, 22, 28, CT, TA_CENTER, spaceBefore=46*mm),
+    'port_g':  S('port_g',  HF_I, 9,  13, CG, TA_CENTER, spaceBefore=4*mm),
     'port_a':  S('port_a',  HF,        11, 14, CT, TA_CENTER, spaceBefore=38*mm),
-    'port_s':  S('port_s',  f'{HF}-B', 8,  11, CT, TA_CENTER, spaceBefore=42*mm),
+    'port_s':  S('port_s',  HF_B, 8,  11, CT, TA_CENTER, spaceBefore=42*mm),
 
     # ── Créditos ──────────────────────────────────────────────────────────────
     'cred':    S('cred',   BF,  7.5, 11, CT, TA_CENTER, spaceAfter=2),
@@ -212,9 +257,9 @@ def estilos():
     'cred_g':  S('cred_g', BF,  7,   10, CG, TA_CENTER),
 
     # ── Prelims literarios ────────────────────────────────────────────────────
-    'ded':     S('ded',  'LoraI', 10.5, 15, CT, TA_RIGHT,
+    'ded':     S('ded',  BF_I, 10.5, 15, CT, TA_RIGHT,
                  rightIndent=6*mm, spaceBefore=32*mm, spaceAfter=4),
-    'epi':     S('epi',  'LoraI', 10,   14, CT, TA_RIGHT,
+    'epi':     S('epi',  BF_I, 10,   14, CT, TA_RIGHT,
                  rightIndent=6*mm, leftIndent=16*mm, spaceBefore=32*mm, spaceAfter=3),
     'epi_a':   S('epi_a', HF, 8.5, 12, CG, TA_RIGHT,
                  rightIndent=6*mm, spaceAfter=2),
@@ -223,8 +268,8 @@ def estilos():
     'orn':     S('orn', BF, 12, 18, CO, TA_CENTER, spaceBefore=4, spaceAfter=4),
 
     # ── Colofón ───────────────────────────────────────────────────────────────
-    'col_i':   S('col_i', 'LoraI', 8, 12, CG, TA_CENTER),
-    'col_b':   S('col_b', f'{HF}-B', 8, 11, CT, TA_CENTER),
+    'col_i':   S('col_i', BF_I, 8, 12, CG, TA_CENTER),
+    'col_b':   S('col_b', HF_B, 8, 11, CT, TA_CENTER),
     }
 
 
@@ -249,7 +294,7 @@ def hdr_r(titulo: str):
         if pn < 7: return
         # Título en cornisa superior exterior (derecha en recto)
         yh = AH - M_TOP + 5
-        c.setFont(f'{HF}-I', 7.5); c.setFillColor(CG)
+        c.setFont(HF_I, 7.5); c.setFillColor(CG)
         c.drawRightString(AW - M_EXT, yh, titulo[:48].upper())
         c.setStrokeColor(CL); c.setLineWidth(0.35)
         c.line(M_INT, yh - 3, AW - M_EXT, yh - 3)
@@ -265,7 +310,7 @@ def hdr_v(autor: str):
         if pn < 7: return
         yh = AH - M_TOP + 5
         if autor:
-            c.setFont(f'{HF}-I', 7.5); c.setFillColor(CG)
+            c.setFont(HF_I, 7.5); c.setFillColor(CG)
             c.drawString(M_EXT, yh, autor[:48].upper())
             c.setStrokeColor(CL); c.setLineWidth(0.35)
             c.line(M_EXT, yh - 3, AW - M_INT, yh - 3)
@@ -371,7 +416,7 @@ def prelims(story, titulo, autor, anyo, deds, epis, epi_autor, S,
     if autor:
         story.append(Paragraph(autor, S['port_a']))
     story.append(Paragraph(titulo,
-        ParagraphStyle('ti2', fontName=f'{HF}-B', fontSize=17, leading=22,
+        ParagraphStyle('ti2', fontName=HF_B, fontSize=17, leading=22,
                        textColor=CT, alignment=TA_CENTER,
                        spaceBefore=46*mm if not autor else 5*mm)))
     story.append(Paragraph('▪ EN ▪', S['port_s']))

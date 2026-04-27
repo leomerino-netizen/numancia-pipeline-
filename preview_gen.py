@@ -55,10 +55,14 @@ def _wm_cab(titulo, autor):
 
 
 def generar_preview(texto: str, titulo: str, autor: str,
-                    docx_bytes: bytes = None) -> bytes:
+                    docx_bytes: bytes = None, bloques=None) -> bytes:
     from docx_parser import parsear_docx, Manuscrito
 
-    if docx_bytes:
+    if bloques is not None:
+        # Bloques pre-parseados (ej. desde PDF)
+        ms = Manuscrito(titulo=titulo, autor=autor)
+        ms.bloques = bloques
+    elif docx_bytes:
         ms = parsear_docx(docx_bytes)
         if titulo: ms.titulo = titulo
         if autor:  ms.autor  = autor
@@ -127,11 +131,15 @@ def generar_preview(texto: str, titulo: str, autor: str,
         t = b.tipo; tx = b.texto; hx = b.html or tx
 
         if t == 'cap_titulo':
-            if en_cap: break  # solo primer capítulo
+            # Cada capítulo SIEMPRE empieza en página nueva
+            story.append(NextPageTemplate('chap'))
+            story.append(PageBreak())
             m = re.match(r'^(CAP[IÍ]TULO)\s+(.+)$', tx, re.IGNORECASE)
             if m:
                 story.append(Paragraph(m.group(1).upper(), S['cap_lbl']))
                 story.append(Paragraph(m.group(2).upper(), S['cap_num']))
+            elif re.match(r'^[IVXLCDM]{1,5}$', tx):
+                story.append(Paragraph(tx, S['cap_num']))
             else:
                 story.append(Paragraph(tx.upper(), S['cap_lbl']))
             story.append(HRFlowable(width='14%', thickness=1, color=CG,

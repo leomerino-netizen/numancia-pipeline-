@@ -63,7 +63,21 @@ W_DOC = AW - LM - RM
 
 # ── Directorio de fotos ──────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
-FOTOS_DIR = os.path.join(_HERE, 'fotos')
+
+def _find(candidates: list) -> str:
+    """Devuelve la primera ruta que existe, o cadena vacía."""
+    for c in candidates:
+        p = os.path.join(_HERE, c)
+        if os.path.isfile(p):
+            return p
+    return ''
+
+LOGO_PATH = _find([
+    'fotos/logo_numancia.png',
+    'logo_numancia.png',
+    'logotipo-editorial-numancia-apaisado-color-hexadecimal.png',
+    'Fotos/logotipo-editorial-numancia-apaisado-color-hexadecimal.png',
+])
 
 ASESORAS = {
     'laura': {
@@ -71,7 +85,8 @@ ASESORAS = {
         'iniciales':     'LV',
         'ext':           '282',
         'email':         'laura.vega@editorialnumancia.com',
-        'foto':          os.path.join(FOTOS_DIR, 'laura.jpg'),
+        'foto':          _find(['fotos/laura.jpg', 'laura.jpg',
+                                'laura-asesora-editorial-editorial-numancia.jpg']),
         'calendario':    'AGENDAR LLAMADA CON LAURA VEGA UGARTE',
         'calendario_url':'https://printcolorweb.zohobookings.eu/#/laura',
     },
@@ -80,7 +95,8 @@ ASESORAS = {
         'iniciales':     'DT',
         'ext':           '283',
         'email':         'debora.tomas@editorialnumancia.com',
-        'foto':          os.path.join(FOTOS_DIR, 'debora.jpg'),
+        'foto':          _find(['fotos/debora.jpg', 'debora.jpg',
+                                'debora-asesora-editorial-numancia.jpg']),
         'calendario':    'AGENDAR LLAMADA CON DÉBORA TÓMAS',
         'calendario_url':'https://printcolorweb.zohobookings.eu/#/debora',
     },
@@ -89,7 +105,8 @@ ASESORAS = {
         'iniciales':     'JM',
         'ext':           '284',
         'email':         'juan.munoz@editorialnumancia.com',
-        'foto':          os.path.join(FOTOS_DIR, 'juan.jpg'),
+        'foto':          _find(['fotos/juan.jpg', 'juan.jpg',
+                                'juan-nunoz-maquetaror-editorial-numancia.jpg']),
         'calendario':    'AGENDAR LLAMADA CON JUAN MUÑOZ',
         'calendario_url':'https://printcolorweb.zohobookings.eu/#/juan',
     },
@@ -98,7 +115,7 @@ ASESORAS = {
         'iniciales':     'NA',
         'ext':           '285',
         'email':         'nancy@editorialnumancia.com',
-        'foto':          os.path.join(FOTOS_DIR, 'nancy.jpg'),
+        'foto':          _find(['fotos/nancy.jpg', 'nancy.jpg', 'Nancy.jpg']),
         'calendario':    'AGENDAR LLAMADA CON NANCY',
         'calendario_url':'https://printcolorweb.zohobookings.eu/#/nancy',
     },
@@ -156,8 +173,8 @@ def _fmt_eur(v: float) -> str:
     return f'EUR {v:,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
 
 
-# ── Ruta del logo ────────────────────────────────────────────────────────────
-LOGO_PATH = os.path.join(FOTOS_DIR, 'logo_numancia.png')
+# (LOGO_PATH ya definido arriba en el bloque ASESORAS via _find)
+
 
 # ── Cabecera compartida (p1 y p2) ────────────────────────────────────────────
 def _cabecera(asesora: dict) -> list:
@@ -431,15 +448,17 @@ def _pagina1(d: dict, asesora: dict) -> list:
     story.append(t_serv)
     story.append(Spacer(1, 10))
 
-    # RESUMEN ECONÓMICO
-    subtotal = round(total_imp + pm + pl, 2)
-    descuento_imp = round(total_imp * dto / 100, 2)  # descuento solo sobre impresión
-    total_dto = round(subtotal - descuento_imp, 2)
+    # RESUMEN ECONÓMICO — lógica igual que Printcolor:
+    # impresión a precio lleno, descuento sobre subtotal total
+    total_imp_full = round(pu * cant, 2)          # 4.52 × 100 = 452,00
+    subtotal       = round(total_imp_full + pm + pl, 2)   # 888,79
+    descuento_eur  = round(subtotal * dto / 100, 2)       # 133,32
+    total_dto      = round(subtotal - descuento_eur, 2)   # 755,48
 
     resumen_data = [
         [Paragraph('Impresión y encuadernación '
                    f'({cant} ejemplares)', S('r1','Helvetica',7.5,11,NEGRO)),
-         Paragraph(_fmt_eur(total_imp), S('r1r','Helvetica',7.5,11,NEGRO,TA_RIGHT))],
+         Paragraph(_fmt_eur(total_imp_full), S('r1r','Helvetica',7.5,11,NEGRO,TA_RIGHT))],
         [Paragraph('Maquetación y diseño editorial (pago único)',
                    S('r2','Helvetica',7.5,11,NEGRO)),
          Paragraph(_fmt_eur(pm), S('r2r','Helvetica',7.5,11,NEGRO,TA_RIGHT))],
@@ -452,7 +471,7 @@ def _pagina1(d: dict, asesora: dict) -> list:
                    S('r4r','Helvetica-Bold',7.5,11,NEGRO,TA_RIGHT))],
         [Paragraph(f'Descuento especial {dto}% — Imprime tus libros con descuento',
                    S('r5','Helvetica',7.5,11,NARANJA)),
-         Paragraph(f'- {_fmt_eur(descuento_imp)}',
+         Paragraph(f'- {_fmt_eur(descuento_eur)}',
                    S('r5r','Helvetica',7.5,11,NARANJA,TA_RIGHT))],
         [Paragraph('<b>TOTAL CON DESCUENTO (IVA 4% incluido)</b>',
                    S('r6','Helvetica-Bold',8,12,NEGRO)),
@@ -744,10 +763,11 @@ def generar_presupuesto(d: dict) -> bytes:
     pl = d.get('precio_legal', 0)
     total_imp = round(d['precio_descuento'] * d['cantidad'], 2)
     dto = d.get('descuento_pct', 0)
-    descuento_imp = round(total_imp * dto / 100, 2) if dto else 0
-    # Si el descuento es sobre impresión únicamente (como en el PDF):
-    subtotal = round(total_imp + pm + pl, 2)
-    total_final = round(subtotal - descuento_imp, 2)
+    # Precio lleno × cantidad como base, descuento sobre subtotal total
+    total_imp_full = round(d['precio_unitario'] * d['cantidad'], 2)
+    subtotal       = round(total_imp_full + pm + pl, 2)
+    descuento_eur  = round(subtotal * dto / 100, 2) if dto else 0
+    total_final    = round(subtotal - descuento_eur, 2)
     d['_total_final'] = total_final
 
     buf = io.BytesIO()

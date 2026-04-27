@@ -275,25 +275,72 @@ def procesar_manuscrito():
     """
     _check_auth()
     try:
-        if 'docx' not in request.files:
-            return jsonify({'error': 'Campo "docx" requerido'}), 400
+        # Aceptar varios nombres de campo: docx, pdf, manuscrito, file
+        archivo = None
+        for nombre_campo in ('docx', 'pdf', 'manuscrito', 'file', 'archivo'):
+            if nombre_campo in request.files:
+                archivo = request.files[nombre_campo]
+                break
+        if archivo is None and request.files:
+            # Tomar el primer archivo subido
+            archivo = next(iter(request.files.values()))
+        if archivo is None:
+            return jsonify({'error': 'No se ha enviado ningún archivo. Use el campo "docx", "pdf" o "manuscrito".'}), 400
 
-        docx_bytes = request.files['docx'].read()
+        contenido_bytes = archivo.read()
+        nombre_fichero  = archivo.filename or 'manuscrito'
         asesora    = request.form.get('asesora', 'laura')
         titulo_ovr = request.form.get('titulo', '')
         autor_ovr  = request.form.get('autor', '')
 
-        # 1. Parsear manuscrito
-        from docx_parser import parsear_docx
+        # Detectar formato
+        nombre_lower = nombre_fichero.lower()
+        es_pdf  = nombre_lower.endswith('.pdf')  or contenido_bytes[:4] == b'%PDF'
+        es_docx = nombre_lower.endswith('.docx') or contenido_bytes[:4] == b'PK\x03\x04'
+
+        # Título del nombre de archivo (sin extensión, normalizado)
+        import re as _re
+        titulo_archivo = _re.sub(r'\.(docx?|pdf|txt)$', '', nombre_fichero, flags=_re.IGNORECASE)
+        titulo_archivo = _re.sub(r'[_-]+', ' ', titulo_archivo).strip()
+        titulo_archivo = ' '.join(w.capitalize() if len(w) > 3 or i == 0 else w.lower()
+                                   for i, w in enumerate(titulo_archivo.split()))
+
+        # 1. Parsear manuscrito según formato
         from analizador import analizar_manuscrito
-        ms = parsear_docx(docx_bytes)
-        titulo = titulo_ovr or ms.titulo or 'Sin título'
+        aviso_pdf = ''
+        if es_pdf:
+            from pdf_a_texto import parsear_pdf
+            ms, info_pdf = parsear_pdf(contenido_bytes)
+            aviso_pdf = info_pdf.get('aviso', '')
+            if not info_pdf.get('tiene_texto'):
+                return jsonify({
+                    'error': 'PDF sin texto extraíble (probablemente escaneado).',
+                    'aviso': aviso_pdf,
+                    'sugerencia': 'Solicita al autor el manuscrito en formato .docx (Word).',
+                }), 422
+            # Para PDFs hay que generar el .docx temporal para preview/maqueta
+            # — alternativa: pasar bytes vacíos y que use el texto
+            docx_bytes_para_maqueta = None
+        elif es_docx:
+            from docx_parser import parsear_docx
+            ms = parsear_docx(contenido_bytes)
+            docx_bytes_para_maqueta = contenido_bytes
+        else:
+            return jsonify({
+                'error': f'Formato no soportado: {nombre_fichero}',
+                'sugerencia': 'Use .docx (Word) o .pdf (PDF con texto)',
+            }), 415
+        # Prioridad: override > parser > nombre archivo
+        titulo = titulo_ovr or ms.titulo or titulo_archivo or 'Sin título'
         autor  = autor_ovr  or ms.autor  or ''
 
         # 2. Estadísticas
         palabras    = sum(len(b.texto.split()) for b in ms.bloques)
         num_caps    = sum(1 for b in ms.bloques if b.tipo == 'cap_titulo')
-        paginas_est = max(1, round(palabras / 250))
+        # Páginas estimadas: A5 fresada con interlineado profesional
+        # Media empírica = ~110 palabras netas por página de cuerpo
+        # (incluye páginas con diálogo, inicios de capítulo, blancos, etc.)
+        paginas_est = max(1, round(palabras / 110))
 
         # 3. Mapear asesora a nombre
         asesoras_n = {
@@ -340,7 +387,12 @@ def procesar_manuscrito():
         informe_bytes = generar_informe(datos_informe)
 
         # 6. Generar preview PDF
-        preview_bytes = generar_preview('', titulo, autor, docx_bytes=docx_bytes)
+        if docx_bytes_para_maqueta:
+            preview_bytes = generar_preview('', titulo, autor, docx_bytes=docx_bytes_para_maqueta)
+        else:
+            # Para PDF: reconstruir texto plano desde los bloques del manuscrito
+            texto_plano = '\n\n'.join(b.texto for b in ms.bloques)
+            preview_bytes = generar_preview(texto_plano, titulo, autor)
 
         # 7. Nombres de archivo profesionales
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip()

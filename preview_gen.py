@@ -14,7 +14,7 @@ from reportlab.platypus import (
 from maqueta_gen import (
     mk_frame, hdr_b, hdr_c, estilos, DropCap, _parse_texto,
     BF, BF_I, HF, HF_B, HF_I, HF_BI, CT, CG, CL, CUERPO_W,
-    AW, AH, M_INT, M_EXT, M_TOP, M_BOT
+    AW, AH, M_INT, M_EXT, M_TOP, M_BOT, _OddPageBreak
 )
 
 def _wm(titulo, autor):
@@ -124,16 +124,26 @@ def generar_preview(texto: str, titulo: str, autor: str,
     # Primer capítulo
     story.append(NextPageTemplate('chap')); story.append(PageBreak())
 
-    en_cap = False; parrs = 0; MAX_P = 90
+    en_cap = False
+    parrs = 0
+    MAX_P = 60        # ~ 10 páginas A5 con prosa normal
+    caps_vistos = 0
 
     for b in bloques:
         if parrs >= MAX_P: break
         t = b.tipo; tx = b.texto; hx = b.html or tx
 
         if t == 'cap_titulo':
-            # Cada capítulo SIEMPRE empieza en página nueva
-            story.append(NextPageTemplate('chap'))
+            caps_vistos += 1
+            # Solo se muestra el PRIMER capítulo en el preview
+            if caps_vistos > 1:
+                break
+            # Convención editorial: capítulos en página impar (recto).
+            # Si la página actual es par, dejamos blanca la siguiente.
+            story.append(NextPageTemplate('blanca'))
             story.append(PageBreak())
+            story.append(_OddPageBreak())
+            story.append(NextPageTemplate('chap'))
             m = re.match(r'^(CAP[IÍ]TULO)\s+(.+)$', tx, re.IGNORECASE)
             if m:
                 story.append(Paragraph(m.group(1).upper(), S['cap_lbl']))

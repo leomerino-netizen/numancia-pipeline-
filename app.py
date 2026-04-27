@@ -295,8 +295,17 @@ def procesar_manuscrito():
         num_caps    = sum(1 for b in ms.bloques if b.tipo == 'cap_titulo')
         paginas_est = max(1, round(palabras / 250))
 
-        # 3. Análisis editorial completo (Claude API o fallback)
-        analisis = analizar_manuscrito(ms, titulo, autor)
+        # 3. Mapear asesora a nombre
+        asesoras_n = {
+            'laura':  'Laura Vega Ugarte',
+            'debora': 'Débora Tómas',
+            'juan':   'Juan Muñoz',
+            'nancy':  'Nancy',
+        }
+
+        # 4. Análisis editorial completo (Claude API o fallback)
+        analisis = analizar_manuscrito(ms, titulo, autor,
+                                       asesora_nombre=asesoras_n.get(asesora, asesora))
 
         # 4. Fecha en español
         from datetime import date
@@ -304,13 +313,6 @@ def procesar_manuscrito():
         meses = ['enero','febrero','marzo','abril','mayo','junio',
                  'julio','agosto','septiembre','octubre','noviembre','diciembre']
         fecha_str = f"{hoy.day} de {meses[hoy.month-1]} de {hoy.year}"
-
-        asesoras_n = {
-            'laura':  'Laura Vega Ugarte',
-            'debora': 'Débora Tómas',
-            'juan':   'Juan Muñoz',
-            'nancy':  'Nancy',
-        }
 
         # 5. Construir dict completo del informe
         datos_informe = {
@@ -332,6 +334,7 @@ def procesar_manuscrito():
             'comparable':        analisis.get('comparable', ''),
             'precio':            analisis.get('precio', ''),
             'notas':             analisis.get('notas', []),
+            'carta_autor':       analisis.get('carta_autor', ''),
         }
 
         informe_bytes = generar_informe(datos_informe)
@@ -372,6 +375,7 @@ def procesar_manuscrito():
                 'precio':            datos_informe['precio'],
             },
             'notas':             datos_informe['notas'],
+            'carta_autor':       datos_informe['carta_autor'],
             'nombre_informe':    nombre_informe,
             'nombre_preview':    nombre_preview,
             'informe_pdf':   base64.b64encode(informe_bytes).decode(),

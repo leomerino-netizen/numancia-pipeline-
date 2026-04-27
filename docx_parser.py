@@ -6,6 +6,10 @@ import re
 from dataclasses import dataclass, field
 from typing import List
 from docx import Document
+from limpiador_manuscrito import (
+    limpiar_bloques, normalizar_comillas, normalizar_dialogos,
+    normalizar_espacios, _quitar_invisibles
+)
 
 @dataclass
 class Bloque:
@@ -35,18 +39,45 @@ _CAP_DASH= re.compile(
 _ROMANO  = re.compile(r'^[IVXLCDM]{1,6}$')
 _DED     = ['para ', 'a ', 'dedicado', 'en memoria', 'a la memoria']
 
+# Palabras estructurales que NO son títulos del libro
+_NO_TITULOS = {
+    'PRÓLOGO','PROLOGO','PRÓLOGUE','PROLOGUE',
+    'INTRODUCCIÓN','INTRODUCCION','INTRODUCTION','INTRO',
+    'EPÍLOGO','EPILOGO','EPILOGUE',
+    'CAPÍTULO','CAPITULO','CHAPTER','CHAP',
+    'PREFACIO','PREFACE','PRÓLOGO DEL AUTOR',
+    'AGRADECIMIENTOS','ACKNOWLEDGEMENTS','ACKNOWLEDGMENTS',
+    'DEDICATORIA','DEDICATION',
+    'PRIMERA PARTE','SEGUNDA PARTE','TERCERA PARTE',
+    'PARTE PRIMERA','PARTE SEGUNDA','PARTE TERCERA',
+    'PARTE I','PARTE II','PARTE III','PARTE IV',
+    'NOTA DEL AUTOR','NOTA DE LA AUTORA','NOTA EDITORIAL',
+    'ÍNDICE','INDICE','CONTENTS','SUMARIO',
+    'NOVELA','POESÍA','POESIA','ENSAYO','RELATO','CUENTO',
+    'EPIGRAFE','EPÍGRAFE','EPIGRAPH',
+}
+
 
 def _runs_html(p):
     plano, html = [], []
     for r in p.runs:
         t = r.text
         if not t: continue
+        # Limpieza inline básica de cada run
+        t = _quitar_invisibles(t)
         plano.append(t)
         if r.bold and r.italic: html.append(f'<b><i>{t}</i></b>')
         elif r.bold:   html.append(f'<b>{t}</b>')
         elif r.italic: html.append(f'<i>{t}</i>')
         else:          html.append(t)
-    return ''.join(plano).strip(), ''.join(html).strip()
+    plano_t = ''.join(plano).strip()
+    html_t  = ''.join(html).strip()
+    # Normalización editorial completa
+    plano_t = normalizar_comillas(plano_t)
+    html_t  = normalizar_comillas(html_t)
+    plano_t = normalizar_espacios(plano_t)
+    html_t  = normalizar_espacios(html_t)
+    return plano_t, html_t
 
 
 def _estilo(p):
@@ -115,8 +146,12 @@ def parsear_docx(src) -> Manuscrito:
         t, h = _runs_html(p)
         est  = _estilo(p)
         # Título: línea corta en mayúsculas (ej: "SARA") o estilo título
-        if (t.isupper() and len(t) < 80 and not _es_cap(t, est)) or \
-           any(x in est for x in ['title','titulo','heading 1']):
+        # Excluir palabras estructurales (PRÓLOGO, CAPÍTULO, INTRODUCCIÓN…)
+        t_norm = t.strip().upper()
+        es_estructural = t_norm in _NO_TITULOS or any(t_norm.startswith(p) for p in _NO_TITULOS)
+        if not es_estructural and (
+            (t.isupper() and len(t) < 80 and not _es_cap(t, est)) or
+            any(x in est for x in ['title','titulo','heading 1'])):
             if not ms.titulo: ms.titulo = t
             inicio = idx + 1
             # Siguiente podría ser autor o subtítulo
@@ -206,6 +241,14 @@ def parsear_docx(src) -> Manuscrito:
         ms.bloques.append(Bloque('parrafo', t, h or t,
                                   primer_parr=primer_tras_cap))
         primer_tras_cap = False; i += 1
+
+    # Limpieza editorial final de todos los bloques
+    limpiar_bloques(ms.bloques)
+
+    # Para cada bloque tipo 'parrafo' que empiece con guión variado, marcarlo dialogo
+    for b in ms.bloques:
+        if b.tipo == 'parrafo' and b.texto.lstrip().startswith('—'):
+            b.tipo = 'dialogo'
 
     return ms
 

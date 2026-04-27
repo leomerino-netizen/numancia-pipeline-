@@ -1,0 +1,223 @@
+"""
+docx_parser.py — Parser inteligente de manuscritos Word
+Detecta: TOC, título, autor, dedicatoria, epígrafe, capítulos, párrafos, diálogos.
+"""
+import re
+from dataclasses import dataclass, field
+from typing import List
+from docx import Document
+
+@dataclass
+class Bloque:
+    tipo: str        # cap_titulo|cap_subtitulo|parrafo|dialogo|separador
+    texto: str
+    html:  str
+    primer_parr: bool = False
+
+@dataclass
+class Manuscrito:
+    titulo:       str = ''
+    autor:        str = ''
+    anyo:         str = '2025'
+    dedicatoria:  List[str] = field(default_factory=list)
+    epigrafe:     List[str] = field(default_factory=list)
+    epigrafe_autor: str = ''
+    bloques:      List[Bloque] = field(default_factory=list)
+    notas_autor:  List[str] = field(default_factory=list)
+
+
+# ── Regexes ───────────────────────────────────────────────────────────────────
+_CAP_RE  = re.compile(
+    r'^(CAP[IÍ]TULO\s+\w[\w\s]{0,30}|cap[ií]tulo\s+[\w]+)',
+    re.IGNORECASE)
+_CAP_DASH= re.compile(
+    r'^(CAP[IÍ]TULO\s+[\w]+)\s*[—\-–]\s*(.+)$', re.IGNORECASE)
+_ROMANO  = re.compile(r'^[IVXLCDM]{1,6}$')
+_DED     = ['para ', 'a ', 'dedicado', 'en memoria', 'a la memoria']
+
+
+def _runs_html(p):
+    plano, html = [], []
+    for r in p.runs:
+        t = r.text
+        if not t: continue
+        plano.append(t)
+        if r.bold and r.italic: html.append(f'<b><i>{t}</i></b>')
+        elif r.bold:   html.append(f'<b>{t}</b>')
+        elif r.italic: html.append(f'<i>{t}</i>')
+        else:          html.append(t)
+    return ''.join(plano).strip(), ''.join(html).strip()
+
+
+def _estilo(p):
+    try: return p.style.name.lower()
+    except: return 'normal'
+
+
+def _es_cap(texto, estilo):
+    if any(x in estilo for x in ['heading','título','title','chapter']): return True
+    if _CAP_RE.match(texto) and len(texto) < 100: return True
+    if _ROMANO.match(texto.strip()): return True
+    return False
+
+
+def _es_sep(texto):
+    return texto.strip() in ('***','* * *','---','—','§','❧','◆','* *','·')
+
+
+# ── Parser principal ──────────────────────────────────────────────────────────
+def parsear_docx(src) -> Manuscrito:
+    import io
+    if isinstance(src,(bytes,bytearray)):
+        doc = Document(io.BytesIO(src))
+    else:
+        doc = Document(src)
+
+    ms = Manuscrito()
+
+    # Metadatos del core
+    cp = doc.core_properties
+    if cp.title:  ms.titulo = cp.title
+    if cp.author: ms.autor  = cp.author
+
+    # Recoger todos los párrafos no vacíos con su índice
+    parrs = [(i, p) for i, p in enumerate(doc.paragraphs) if p.text.strip()]
+
+    # ── 1. Detectar y saltar índice/TOC inicial ───────────────────────────────
+    # Criterio: bloque inicial donde TODOS son "Body Text" o tienen
+    # el patrón "Capítulo X — título" en la primera sección del doc
+    inicio = 0
+    # Buscar el primer párrafo que parezca el cuerpo real (Normal y no es lista de caps)
+    toc_fin = 0
+    for idx, (_, p) in enumerate(parrs):
+        est = _estilo(p)
+        t   = p.text.strip()
+        # Si encontramos el título real (mayúsculas cortas, estilo Normal, no cap list)
+        # o una línea que claramente es inicio de texto narrativo, paramos el TOC
+        if est == 'normal' and t.isupper() and len(t) < 60 and not _CAP_RE.match(t):
+            # Podría ser el título de la obra
+            toc_fin = idx
+            break
+        if est == 'normal' and _es_cap(t, est) and idx > 5:
+            toc_fin = idx
+            break
+        if est not in ('body text', 'normal', 'default paragraph font', ''):
+            toc_fin = idx
+            break
+    else:
+        toc_fin = 0
+
+    parrs = parrs[toc_fin:]
+
+    # ── 2. Detectar título y autor ────────────────────────────────────────────
+    inicio = 0
+    for idx, (_, p) in enumerate(parrs[:6]):
+        t, h = _runs_html(p)
+        est  = _estilo(p)
+        # Título: línea corta en mayúsculas (ej: "SARA") o estilo título
+        if (t.isupper() and len(t) < 80 and not _es_cap(t, est)) or \
+           any(x in est for x in ['title','titulo','heading 1']):
+            if not ms.titulo: ms.titulo = t
+            inicio = idx + 1
+            # Siguiente podría ser autor o subtítulo
+            if idx+1 < len(parrs):
+                t2, _ = _runs_html(parrs[idx+1][1])
+                est2  = _estilo(parrs[idx+1][1])
+                if not _es_cap(t2, est2) and len(t2) < 80 and not t2.isupper():
+                    if not ms.autor: ms.autor = t2
+                    inicio = idx + 2
+            break
+
+    parrs = parrs[inicio:]
+
+    # ── 3. Detectar zona prelims (dedicatoria / epígrafe) antes del cap 1 ────
+    primer_cap_idx = None
+    for idx, (_, p) in enumerate(parrs):
+        t, _ = _runs_html(p)
+        est  = _estilo(p)
+        if _es_cap(t, est):
+            primer_cap_idx = idx
+            break
+
+    if primer_cap_idx and primer_cap_idx > 0:
+        for _, p in parrs[:primer_cap_idx]:
+            t, h = _runs_html(p)
+            tl   = t.lower()
+            if any(tl.startswith(s) for s in _DED) and len(t) < 200:
+                ms.dedicatoria.append(h or t)
+            elif t.startswith(('«','"','"')) or t.startswith('—') and len(t)<120:
+                ms.epigrafe.append(h or t)
+        parrs = parrs[primer_cap_idx:]
+
+    # ── 4. Parsear cuerpo ─────────────────────────────────────────────────────
+    i = 0
+    primer_tras_cap = False
+
+    while i < len(parrs):
+        _, p = parrs[i]
+        t, h = _runs_html(p)
+        est  = _estilo(p)
+
+        if not t:
+            i += 1; continue
+
+        # Separador
+        if _es_sep(t):
+            ms.bloques.append(Bloque('separador','❧','❧'))
+            i += 1; primer_tras_cap = False; continue
+
+        # Capítulo con guion en misma línea: "CAPÍTULO UNO — El timbre"
+        m = _CAP_DASH.match(t)
+        if m and len(t) < 100:
+            num_cap = m.group(1).strip()
+            sub_cap = m.group(2).strip()
+            ms.bloques.append(Bloque('cap_titulo', num_cap, num_cap))
+            ms.bloques.append(Bloque('cap_subtitulo', sub_cap, sub_cap))
+            primer_tras_cap = True; i += 1; continue
+
+        # Capítulo solo
+        if _es_cap(t, est):
+            num_cap = t.strip()
+            sub_cap = ''
+            # Mirar si la siguiente línea es subtítulo
+            if i+1 < len(parrs):
+                t2, h2 = _runs_html(parrs[i+1][1])
+                est2   = _estilo(parrs[i+1][1])
+                if t2 and not _es_cap(t2, est2) and len(t2) < 100 \
+                   and not t2.startswith('—') and len(t2.split()) < 14:
+                    sub_cap = t2; i += 1
+            ms.bloques.append(Bloque('cap_titulo', num_cap, num_cap))
+            if sub_cap:
+                ms.bloques.append(Bloque('cap_subtitulo', sub_cap, sub_cap))
+            primer_tras_cap = True; i += 1; continue
+
+        # Nota del autor
+        if (t.startswith('[') and t.endswith(']')) or 'note' in est:
+            ms.notas_autor.append(t.strip('[]'))
+            i += 1; continue
+
+        # Diálogo
+        if t.startswith(('—','\u2014')):
+            ms.bloques.append(Bloque('dialogo', t, h or t,
+                                      primer_parr=primer_tras_cap))
+            primer_tras_cap = False; i += 1; continue
+
+        # Párrafo normal
+        ms.bloques.append(Bloque('parrafo', t, h or t,
+                                  primer_parr=primer_tras_cap))
+        primer_tras_cap = False; i += 1
+
+    return ms
+
+
+if __name__ == '__main__':
+    import sys
+    ms = parsear_docx(sys.argv[1] if len(sys.argv)>1 else '/mnt/user-data/uploads/Sara.docx')
+    print(f"Título:    '{ms.titulo}'")
+    print(f"Autor:     '{ms.autor}'")
+    print(f"Dedicatoria: {ms.dedicatoria}")
+    print(f"Epígrafe:    {ms.epigrafe}")
+    print(f"Bloques: {len(ms.bloques)}")
+    print("\nPrimeros 15 bloques:")
+    for b in ms.bloques[:15]:
+        print(f"  [{b.tipo:15}] p={b.primer_parr} | {b.texto[:70]}")

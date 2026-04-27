@@ -2,13 +2,20 @@
 Genera el informe de viabilidad A4 PDF — estilo corporativo Editorial Numancia.
 Azul #1565C0 / Blanco / Estrellas doradas
 """
-import io
+import io, os
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
+
+# Logo de la editorial (color para informe en cabecera azul)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+LOGO_PATH = next((p for p in [
+    os.path.join(_HERE, 'fotos', 'logo_numancia.png'),
+    os.path.join(_HERE, 'logo_numancia.png'),
+] if os.path.isfile(p)), None)
 
 AZUL       = colors.HexColor('#1565C0')
 AZUL_MED   = colors.HexColor('#1976D2')
@@ -87,20 +94,45 @@ def generar_informe(d: dict) -> bytes:
         topMargin=14*mm, bottomMargin=16*mm)
     story = []
 
-    # CABECERA
+    # CABECERA — con logo de Editorial Numancia (igual que presupuesto)
+    # Logo Editorial Numancia — apaisado, ratio real ~4.81:1
+    logo_img = None
+    if LOGO_PATH:
+        try:
+            from PIL import Image as PILImage
+            with PILImage.open(LOGO_PATH) as _img:
+                ratio = _img.width / _img.height
+            ancho_max = W_DOC * 0.40        # 40% del ancho útil
+            alto_max  = 11 * mm              # alto razonable para cabecera
+            # Calcular respetando ambos límites manteniendo proporción
+            if alto_max * ratio <= ancho_max:
+                logo_h = alto_max
+                logo_w = alto_max * ratio
+            else:
+                logo_w = ancho_max
+                logo_h = ancho_max / ratio
+            logo_img = Image(LOGO_PATH, width=logo_w, height=logo_h)
+            logo_img.hAlign = 'LEFT'
+        except Exception:
+            logo_img = None
+    if logo_img is None:
+        logo_img = Paragraph(
+            '<font name="Helvetica-Bold" size="14" color="white">Editorial Numancia</font><br/>'
+            '<font name="Helvetica" size="8" color="#BBDEFB">Grupo Printcolorweb.com</font>',
+            S('x1','Helvetica',14,17,BLANCO))
+
     cab = Table([[
-        Paragraph('<font name="Helvetica-Bold" size="14" color="white">Editorial Numancia</font><br/>'
-                  '<font name="Helvetica" size="8" color="#BBDEFB">Grupo Printcolorweb.com</font>',
-                  S('x1','Helvetica',14,17,BLANCO)),
-        Paragraph('<font name="Helvetica-Bold" size="8" color="white">INFORME DE VIABILIDAD EDITORIAL</font><br/>'
-                  '<font name="Helvetica" size="7" color="#BBDEFB">Documento confidencial · Uso interno</font>',
+        logo_img,
+        Paragraph('<font name="Helvetica-Bold" size="9" color="white">INFORME DE LECTURA Y VALORACIÓN</font><br/>'
+                  '<font name="Helvetica" size="7" color="#BBDEFB">Editorial Numancia · Grupo Printcolorweb.com</font><br/>'
+                  '<font name="Helvetica-Oblique" size="6.5" color="#BBDEFB">Documento confidencial · uso interno</font>',
                   S('x2','Helvetica',8,11,BLANCO,TA_RIGHT))
-    ]], colWidths=[W_DOC*0.55, W_DOC*0.45])
+    ]], colWidths=[W_DOC*0.4, W_DOC*0.6])
     cab.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,-1),AZUL),
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
         ('LEFTPADDING',(0,0),(-1,-1),10),('RIGHTPADDING',(0,0),(-1,-1),10),
-        ('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),10),
+        ('TOPPADDING',(0,0),(-1,-1),8),('BOTTOMPADDING',(0,0),(-1,-1),8),
     ]))
     story.append(cab)
 

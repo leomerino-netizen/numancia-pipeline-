@@ -263,25 +263,15 @@ if __name__ == '__main__':
 @app.route('/procesar-manuscrito', methods=['POST'])
 def procesar_manuscrito():
     """
-    Endpoint todo-en-uno para el flujo de Nuevo Análisis en Lovable.
+    Procesa un manuscrito .docx y genera:
+      - Informe de lectura y valoración (PDF + datos JSON)
+      - Maquetación previa borrador (PDF)
     
-    Acepta multipart/form-data:
-      - docx     (file, requerido) — manuscrito Word
-      - asesora  (string) — 'laura' | 'debora' | 'juan'
-      - titulo   (string, opcional — sobreescribe el del docx)
-      - autor    (string, opcional)
-    
-    Devuelve JSON:
-    {
-      "ok": true,
-      "titulo": "...",
-      "autor": "...",
-      "genero": "...",
-      "paginas_estimadas": 180,
-      "palabras": 36000,
-      "informe_pdf": "<base64>",
-      "preview_pdf": "<base64>"
-    }
+    Multipart form-data:
+      - docx     (file, requerido)
+      - asesora  (string: 'laura'|'debora'|'juan')
+      - titulo   (opcional)
+      - autor    (opcional)
     """
     _check_auth()
     try:
@@ -293,85 +283,97 @@ def procesar_manuscrito():
         titulo_ovr = request.form.get('titulo', '')
         autor_ovr  = request.form.get('autor', '')
 
-        # 1. Parsear el manuscrito
+        # 1. Parsear manuscrito
         from docx_parser import parsear_docx
+        from analizador import analizar_manuscrito
         ms = parsear_docx(docx_bytes)
-
         titulo = titulo_ovr or ms.titulo or 'Sin título'
         autor  = autor_ovr  or ms.autor  or ''
 
-        # 2. Estadísticas básicas
-        palabras = sum(len(b.texto.split()) for b in ms.bloques)
-        paginas_est = max(1, round(palabras / 250))  # ~250 palabras/página A5
+        # 2. Estadísticas
+        palabras    = sum(len(b.texto.split()) for b in ms.bloques)
+        num_caps    = sum(1 for b in ms.bloques if b.tipo == 'cap_titulo')
+        paginas_est = max(1, round(palabras / 250))
 
-        # 3. Generar preview PDF
-        preview_bytes = generar_preview(
-            texto='', titulo=titulo, autor=autor,
-            docx_bytes=docx_bytes
-        )
+        # 3. Análisis editorial completo (Claude API o fallback)
+        analisis = analizar_manuscrito(ms, titulo, autor)
 
-        # 4. Generar informe de viabilidad (datos automáticos del manuscrito)
+        # 4. Fecha en español
         from datetime import date
         hoy = date.today()
         meses = ['enero','febrero','marzo','abril','mayo','junio',
                  'julio','agosto','septiembre','octubre','noviembre','diciembre']
         fecha_str = f"{hoy.day} de {meses[hoy.month-1]} de {hoy.year}"
 
-        # Mapear asesora a nombre completo
-        asesoras_nombres = {
+        asesoras_n = {
             'laura':  'Laura Vega Ugarte',
             'debora': 'Débora Tómas',
             'juan':   'Juan Muñoz',
             'nancy':  'Nancy',
         }
 
-        # Calcular número de capítulos detectados
-        num_caps = sum(1 for b in ms.bloques if b.tipo == 'cap_titulo')
-
+        # 5. Construir dict completo del informe
         datos_informe = {
             'titulo':        titulo,
             'autor':         autor,
-            'genero':        'Novela',
+            'genero':        analisis.get('genero', 'Novela'),
             'extension':     f'{palabras:,} palabras · {num_caps} capítulos · aprox. {paginas_est} págs. A5'.replace(',', '.'),
-            'ambientacion':  'Pendiente de lectura completa',
+            'ambientacion':  analisis.get('ambientacion', ''),
             'fecha':         fecha_str,
-            'evaluado_por':  asesoras_nombres.get(asesora, asesora),
-            'sinopsis_i':    f'Manuscrito recibido. {palabras:,} palabras en {num_caps} capítulos detectados.'.replace(',', '.'),
-            'sinopsis_ii':   'Sinopsis pendiente de elaboración tras lectura completa del manuscrito.',
-            'sinopsis_iii':  '',
-            'eval': [
-                {'criterio': 'Originalidad',      'estrellas': '3/5', 'obs': 'Pendiente evaluación'},
-                {'criterio': 'Calidad narrativa',  'estrellas': '3/5', 'obs': 'Pendiente evaluación'},
-                {'criterio': 'Estructura',         'estrellas': '3/5', 'obs': 'Pendiente evaluación'},
-                {'criterio': 'Estilo y voz',       'estrellas': '3/5', 'obs': 'Pendiente evaluación'},
-                {'criterio': 'Viabilidad comercial','estrellas': '3/5', 'obs': 'Pendiente evaluación'},
-            ],
-            'veredicto':      'CON MEJORAS',
-            'veredicto_texto': 'Informe preliminar generado automáticamente. Requiere lectura completa por la asesora para evaluación definitiva.',
-            'lector_primario':   'Por determinar',
-            'lector_secundario': 'Por determinar',
-            'comparable':        'Por determinar',
-            'precio':            'Por determinar',
-            'notas':             [
-                f'Manuscrito procesado automáticamente el {fecha_str}.',
-                f'Capítulos detectados: {num_caps}.',
-                'Este informe es preliminar. La asesora debe completar la evaluación.',
-            ],
+            'evaluado_por':  asesoras_n.get(asesora, asesora),
+            'sinopsis_i':    analisis.get('sinopsis_i', ''),
+            'sinopsis_ii':   analisis.get('sinopsis_ii', ''),
+            'sinopsis_iii':  analisis.get('sinopsis_iii', ''),
+            'eval':          analisis.get('eval', []),
+            'veredicto':       analisis.get('veredicto', 'CON MEJORAS'),
+            'veredicto_texto': analisis.get('veredicto_texto', ''),
+            'lector_primario':   analisis.get('lector_primario', ''),
+            'lector_secundario': analisis.get('lector_secundario', ''),
+            'comparable':        analisis.get('comparable', ''),
+            'precio':            analisis.get('precio', ''),
+            'notas':             analisis.get('notas', []),
         }
 
         informe_bytes = generar_informe(datos_informe)
 
-        # 5. Devolver JSON con ambos PDFs en base64
+        # 6. Generar preview PDF
+        preview_bytes = generar_preview('', titulo, autor, docx_bytes=docx_bytes)
+
+        # 7. Nombres de archivo profesionales
+        titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip()
+        nombre_informe = f'Informe de lectura y valoracion - {titulo_safe}.pdf'
+        nombre_preview = f'Maquetacion previa borrador - {titulo_safe}.pdf'
+
+        # 8. Devolver JSON con todos los datos para Lovable
         return jsonify({
             'ok':                True,
             'titulo':            titulo,
             'autor':             autor,
-            'genero':            'Novela',
+            'genero':            datos_informe['genero'],
+            'ambientacion':      datos_informe['ambientacion'],
             'palabras':          palabras,
             'capitulos':         num_caps,
             'paginas_estimadas': paginas_est,
             'asesora':           asesora,
+            'asesora_nombre':    asesoras_n.get(asesora, asesora),
             'fecha':             fecha_str,
+            'sinopsis': {
+                'i':   datos_informe['sinopsis_i'],
+                'ii':  datos_informe['sinopsis_ii'],
+                'iii': datos_informe['sinopsis_iii'],
+            },
+            'evaluacion':        datos_informe['eval'],
+            'veredicto':         datos_informe['veredicto'],
+            'veredicto_texto':   datos_informe['veredicto_texto'],
+            'publico': {
+                'lector_primario':   datos_informe['lector_primario'],
+                'lector_secundario': datos_informe['lector_secundario'],
+                'comparable':        datos_informe['comparable'],
+                'precio':            datos_informe['precio'],
+            },
+            'notas':             datos_informe['notas'],
+            'nombre_informe':    nombre_informe,
+            'nombre_preview':    nombre_preview,
             'informe_pdf':   base64.b64encode(informe_bytes).decode(),
             'preview_pdf':   base64.b64encode(preview_bytes).decode(),
         })

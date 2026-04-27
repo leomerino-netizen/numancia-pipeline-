@@ -25,12 +25,12 @@ def _wm(titulo, autor):
         c.translate(AW/2, AH/2)
         c.rotate(36)
         c.drawCentredString(0, 12, 'Editorial Numancia')
-        c.setFont('LS', 7.5)
+        c.setFont(HF, 7.5)
         c.drawCentredString(0, -8, 'PRUEBA DE MAQUETA — pendiente aprobación autor')
         c.restoreState()
         pn = doc.page
         if pn >= 5:
-            c.setFont('LS', 7.5); c.setFillColor(CG)
+            c.setFont(HF, 7.5); c.setFillColor(CG)
             c.drawCentredString(AW/2, M_BOT-5*mm, str(pn))
     return fn
 
@@ -100,7 +100,7 @@ def generar_preview(texto: str, titulo: str, autor: str,
     if autor_real:
         story.append(Paragraph(autor_real, S['port_a']))
     story.append(Paragraph(titulo_real,
-        ParagraphStyle('pti2', fontName=f'{HF}-B', fontSize=17, leading=22,
+        ParagraphStyle('pti2', fontName=HF_B, fontSize=17, leading=22,
                        textColor=CT, alignment=TA_CENTER,
                        spaceBefore=48*mm if not autor_real else 5*mm)))
     story.append(Paragraph('▪ EN ▪', S['port_s']))

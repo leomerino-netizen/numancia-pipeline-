@@ -19,67 +19,38 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.pdfmetrics import registerFontFamily
 
-# ── Registro de fuentes con fallback robusto ─────────────────────────────────
-def _reg(n, p):
+# ── Fuentes built-in ReportLab (funcionan siempre, sin TTF externos) ─────────
+# Intentar Lora/LiberationSerif para uso local; si fallan, usar Times/Helvetica
+def _try_reg(n, p):
     try:
         pdfmetrics.registerFont(TTFont(n, p))
         return True
-    except:
-        return False
+    except: return False
 
-# Intentar fuentes externas
-_FONT_PATHS = {
-    'Lora':  '/usr/share/fonts/truetype/google-fonts/Lora-Variable.ttf',
-    'LoraI': '/usr/share/fonts/truetype/google-fonts/Lora-Italic-Variable.ttf',
-    'LS':    '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf',
-    'LS-B':  '/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf',
-    'LS-I':  '/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf',
-    'LS-BI': '/usr/share/fonts/truetype/liberation/LiberationSerif-BoldItalic.ttf',
-}
-_REGISTERED = {n: _reg(n, p) for n, p in _FONT_PATHS.items()}
+_LORA = (_try_reg('LoraTTF',   '/usr/share/fonts/truetype/google-fonts/Lora-Variable.ttf') and
+         _try_reg('LoraTTF-I', '/usr/share/fonts/truetype/google-fonts/Lora-Italic-Variable.ttf'))
+_LS   = (_try_reg('LSerifTTF', '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf') and
+         _try_reg('LSerifTTF-B','/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf') and
+         _try_reg('LSerifTTF-I','/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf') and
+         _try_reg('LSerifTTF-BI','/usr/share/fonts/truetype/liberation/LiberationSerif-BoldItalic.ttf'))
 
-# Verificar qué fuentes están disponibles realmente
-def _font_ok(name):
+if _LORA and _LS:
+    # Local: usar Lora/LiberationSerif
+    BF, BF_I            = 'LoraTTF', 'LoraTTF-I'
+    HF, HF_B, HF_I, HF_BI = 'LSerifTTF', 'LSerifTTF-B', 'LSerifTTF-I', 'LSerifTTF-BI'
     try:
-        pdfmetrics.getFont(name)
-        return True
-    except:
-        return False
-
-# Fuentes a usar — fallback a Times/Helvetica integradas de ReportLab
-if _font_ok('Lora'):
-    BF   = 'Lora'
-    BF_I = 'LoraI'
-else:
-    BF   = 'Times-Roman'
-    BF_I = 'Times-Italic'
-    # Alias para que el código funcione igual
-    try:
-        pdfmetrics.registerFont(TTFont(BF_I, '/usr/share/fonts/truetype/google-fonts/Lora-Italic-Variable.ttf'))
-    except:
-        pass
-
-if _font_ok('LS') and _font_ok('LS-B'):
-    HF    = 'LS'
-    HF_B  = 'LS-B'
-    HF_I  = 'LS-I'
-    HF_BI = 'LS-BI'
-else:
-    HF    = 'Helvetica'
-    HF_B  = 'Helvetica-Bold'
-    HF_I  = 'Helvetica-Oblique'
-    HF_BI = 'Helvetica-BoldOblique'
-    # Crear alias LS-* → Helvetica para el código que los referencia
-    from reportlab.pdfbase.pdfmetrics import registerFontFamily as _rff
-    try:
-        _rff('LS', normal='Helvetica', bold='Helvetica-Bold',
-             italic='Helvetica-Oblique', boldItalic='Helvetica-BoldOblique')
+        registerFontFamily('LoraTTF',   normal=BF, bold=HF_B, italic=BF_I, boldItalic=HF_BI)
+        registerFontFamily('LSerifTTF', normal=HF, bold=HF_B, italic=HF_I, boldItalic=HF_BI)
     except: pass
-
-try:
-    registerFontFamily('Lora', normal=BF, bold=HF_B,  italic=BF_I,  boldItalic=HF_BI)
-    registerFontFamily('LS',   normal=HF, bold=HF_B,  italic=HF_I,  boldItalic=HF_BI)
-except: pass
+else:
+    # Producción Railway: built-in ReportLab (Times + Helvetica)
+    BF                    = 'Times-Roman'
+    BF_I                  = 'Times-Italic'
+    HF                    = 'Times-Roman'
+    HF_B                  = 'Times-Bold'
+    HF_I                  = 'Times-Italic'
+    HF_BI                 = 'Times-BoldItalic'
+    # Las familias Times y Helvetica YA están registradas por defecto en ReportLab
 
 # ── Dimensiones PRH / A5 ─────────────────────────────────────────────────────
 AW, AH   = A5                  # 419.5 × 595.3 pt  (148 × 210 mm)
@@ -109,7 +80,6 @@ CG = colors.HexColor('#5A5A5A')
 CL = colors.HexColor('#C0C0C0')
 CO = colors.HexColor('#4A4A4A')
 
-BF = 'Lora'; HF = 'LS'
 
 _HERE     = os.path.dirname(os.path.abspath(__file__))
 LOGO_PATH = next((p for p in [
@@ -132,7 +102,7 @@ def _small_caps(texto: str, size: float = SC_SIZE) -> str:
     corte = m.start() if m else min(len(raw), 55)
     parte_sc   = raw[:corte].upper()
     parte_rest = raw[corte:]
-    sc_html = (f'<font name="{HF}-B" size="{size}" '
+    sc_html = (f'<font name="{HF_B}" size="{size}" '
                f'color="#1A1A1A">{parte_sc}</font>')
     return sc_html + parte_rest
 
@@ -186,7 +156,7 @@ class DropCap(Flowable):
         # Small caps para las primeras palabras (hasta primer punto o ~50 chars)
         m = re.search(r'[.,;]', body[:60])
         corte = m.start() if m else min(len(body), 50)
-        sc   = f'<font name="{HF}-B" size="{SC_SIZE}">{body[:corte].upper()}</font>'
+        sc   = f'<font name="{HF_B}" size="{SC_SIZE}">{body[:corte].upper()}</font>'
         rest = body[corte:]
         return sc + rest
 
@@ -204,7 +174,7 @@ class DropCap(Flowable):
         # En PRH: la capital tiene la base a la misma altura que la línea 1 de texto
         baseline = self._total - self.ld  # ≈ altura 1ª línea desde la base del flowable
         c.saveState()
-        c.setFont('LS-B', self.sz_cap)
+        c.setFont(HF_B, self.sz_cap)
         c.setFillColor(CT)
         # Ajuste fino: capital ligeramente baja para alinearse con baseline
         c.drawString(0, baseline - self.sz_cap * 0.12, letra)

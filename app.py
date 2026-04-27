@@ -390,9 +390,8 @@ def procesar_manuscrito():
         if docx_bytes_para_maqueta:
             preview_bytes = generar_preview('', titulo, autor, docx_bytes=docx_bytes_para_maqueta)
         else:
-            # Para PDF: reconstruir texto plano desde los bloques del manuscrito
-            texto_plano = '\n\n'.join(b.texto for b in ms.bloques)
-            preview_bytes = generar_preview(texto_plano, titulo, autor)
+            # Para PDF: pasar los bloques ya parseados para conservar estructura
+            preview_bytes = generar_preview('', titulo, autor, bloques=ms.bloques)
 
         # 7. Nombres de archivo profesionales
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip()

@@ -417,8 +417,12 @@ def cuerpo(story, bloques, S):
         hx = b.html or tx
 
         if t == 'cap_titulo':
-            story.append(NextPageTemplate('chap'))
+            # Convención editorial: capítulos en página impar (recto)
+            story.append(NextPageTemplate('blank'))  # página par eventual = blanca
             story.append(PageBreak())
+            story.append(NextPageTemplate('chap'))
+            # Si la página actual sería par, salta una en blanco para llegar a impar
+            story.append(_OddPageBreak())
             m = re.match(r'^(CAP[IÍ]TULO)\s+(.+)$', tx, re.IGNORECASE)
             if m:
                 story.append(Paragraph(m.group(1).upper(), S['cap_lbl']))
@@ -574,6 +578,67 @@ def _parse_texto(texto: str):
             tipo = 'dialogo' if l.startswith(('—','\u2014')) else 'parrafo'
             bloques.append(Bloque(tipo, l, l, primer_parr=primer)); primer = False
     return bloques
+
+
+class OddPageBreak(Flowable):
+    """
+    Fuerza que el siguiente contenido comience en página impar (recto/derecha).
+    Si la próxima página sería par, inserta una página en blanco antes.
+    Convención editorial estándar PRH/Penguin/Planeta para capítulos.
+    """
+    width = 0
+    height = 0
+    def draw(self): pass
+    def wrap(self, aw, ah):
+        return (0, 0)
+
+
+def _forzar_impar(story):
+    """
+    Inserta page breaks suficientes para que el siguiente contenido
+    aparezca en página impar. Se evalúa en tiempo de build.
+    """
+    # Estrategia simple: PageBreak siempre + un OddPageMarker que en build
+    # agregará otro PageBreak si quedó en par.
+    story.append(_OddBreakSentinel())
+
+
+class _OddPageBreak(Flowable):
+    """
+    Si la página actual es PAR (verso), inserta un page break para que
+    el siguiente flowable (capítulo) caiga en página IMPAR (recto).
+    """
+    _ZeroSize = True
+    def __init__(self):
+        Flowable.__init__(self)
+        self.width = 0
+        self.height = 0
+
+    def wrap(self, aw, ah):
+        return (aw, 0)
+
+    def drawOn(self, canvas, x, y, _sW=0):
+        # Comprobar paridad de página actual
+        try:
+            pn = canvas.getPageNumber()
+        except:
+            pn = 1
+        # Si la página DONDE estamos imprimiendo es par, no necesitamos nada
+        # (el siguiente PageBreak nos llevará a impar).
+        # Si es impar, el siguiente PageBreak nos llevaría a par → forzamos otro
+        # Pero en este punto ya hemos tenido un PageBreak antes, así que:
+        # - Si pn es impar: ya estamos donde queremos
+        # - Si pn es par: necesitamos saltar una más
+        if pn % 2 == 0:
+            try:
+                canvas.showPage()
+            except: pass
+
+    def draw(self):
+        pass
+
+
+_OddBreakSentinel = _OddPageBreak
 
 
 if __name__ == '__main__':

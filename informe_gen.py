@@ -468,20 +468,60 @@ def generar_informe(d: dict) -> bytes:
               leftIndent=4*mm, rightIndent=4*mm)))
         story.append(Spacer(1, 12))
 
-    # ── 9. Carta de la asesora al autor ──────────────────────────────────────
-    carta = d.get('carta_autor', '').strip()
+    # ── 9. Carta de la asesora al autor (siempre presente) ──────────────────
+    carta = (d.get('carta_autor') or '').strip()
     if carta:
-        story.append(_seccion('Una nota personal para el autor'))
-        story.append(Spacer(1, 6))
-        story.append(Paragraph(
-            f'<font name="Times-Italic" size="11" color="#1A1A1A">{carta}</font>',
+        story.append(_seccion('Una nota personal de la asesora'))
+        story.append(Spacer(1, 8))
+
+        # Marco crema sutil para destacar la carta como un mensaje personal
+        carta_html = ''
+        for parrafo in carta.split('\n\n'):
+            parrafo = parrafo.strip()
+            if not parrafo: continue
+            parrafo_esc = parrafo.replace('&', '&amp;').replace('<','&lt;').replace('>','&gt;')
+            carta_html += (
+                f'<font name="Times-Italic" size="11" color="#1A1A1A">{parrafo_esc}</font>'
+                '<br/><br/>'
+            )
+
+        # Firma de la asesora
+        asesora = d.get('evaluado_por','La asesora editorial')
+        firma_html = (
+            f'<para alignment="right">'
+            f'<font name="Times-Italic" size="10" color="#666666">— {asesora}</font><br/>'
+            f'<font name="Helvetica" size="6.5" color="#A88838">EDITORIAL NUMANCIA</font>'
+            f'</para>'
+        )
+
+        contenido_carta = Paragraph(
+            carta_html,
             S('car','Times-Italic',11,16,NEGRO,TA_JUSTIFY,
-              leftIndent=8*mm, rightIndent=8*mm, spaceAfter=4)))
-        story.append(Spacer(1, 6))
-        story.append(Paragraph(
-            f'<font name="Times-Italic" size="10" color="#666666">— {d.get("evaluado_por","La asesora")}</font>',
+              leftIndent=2*mm, rightIndent=2*mm, spaceAfter=4))
+
+        firma_p = Paragraph(
+            f'<font name="Times-Italic" size="10" color="#666666">— {asesora}</font><br/>'
+            f'<font name="Helvetica" size="6.5" color="#A88838">EDITORIAL NUMANCIA</font>',
             S('fma','Times-Italic',10,13,GRIS,TA_RIGHT,
-              rightIndent=8*mm, spaceAfter=4)))
+              rightIndent=2*mm, spaceAfter=2))
+
+        # Encerramos en una tabla con fondo crema y borde dorado fino
+        tbl_carta = Table(
+            [[contenido_carta], [firma_p]],
+            colWidths=[W_DOC]
+        )
+        tbl_carta.setStyle(TableStyle([
+            ('BACKGROUND', (0,0),(-1,-1), CREMA),
+            ('LEFTPADDING', (0,0),(-1,-1), 14),
+            ('RIGHTPADDING',(0,0),(-1,-1), 14),
+            ('TOPPADDING',  (0,0),(0,0),   12),
+            ('TOPPADDING',  (0,1),(0,1),   2),
+            ('BOTTOMPADDING',(0,0),(0,0),  4),
+            ('BOTTOMPADDING',(0,1),(0,1),  10),
+            ('LINEBELOW',   (0,-1),(-1,-1),0.6, DORADO),
+            ('LINEABOVE',   (0,0),(-1,0),  0.6, DORADO),
+        ]))
+        story.append(tbl_carta)
         story.append(Spacer(1, 12))
 
     # ── 10. Pie ──────────────────────────────────────────────────────────────

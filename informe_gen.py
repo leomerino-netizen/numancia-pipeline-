@@ -62,9 +62,14 @@ def _estrellas(pts_str):
     n = max(0, min(5, n))
     llenas = '&#9733;' * n
     vacias = '&#9734;' * (5 - n)
+    # Usar la misma estrella ★ rellena pero en color gris claro para las "vacías"
+    # (la estrella hueca ☆ no renderiza en todas las fuentes y sale como cuadrado)
+    estrella_oro  = '\u2605'   # ★
+    estrellas_oro   = estrella_oro * n
+    estrellas_gris  = estrella_oro * (5 - n)
     return (
-        f'<font name="Helvetica" size="13" color="#A88838">{llenas}</font>'
-        f'<font name="Helvetica" size="13" color="#D4CEC2">{vacias}</font>'
+        f'<font name="Helvetica" size="13" color="#A88838">{estrellas_oro}</font>'
+        f'<font name="Helvetica" size="13" color="#D4CEC2">{estrellas_gris}</font>'
         f'<br/><font name="Helvetica-Oblique" size="6.5" color="#888888">{n} de 5</font>'
     )
 
@@ -350,7 +355,120 @@ def generar_informe(d: dict) -> bytes:
                       leftIndent=6*mm, spaceAfter=4)))
         story.append(Spacer(1, 12))
 
-    # ── 9. Carta de la asesora al autor (NUEVO) ──────────────────────────────
+    # ── 8-bis. Análisis ortotipográfico preliminar ───────────────────────────
+    orto = d.get('ortotipo')
+    if orto and orto.get('total_incidencias', 0) >= 0 and orto.get('incidencias'):
+        story.append(_seccion('Análisis ortotipográfico preliminar'))
+        story.append(Spacer(1, 6))
+
+        # Resumen general
+        total = orto.get('total_incidencias', 0)
+        cats  = orto.get('categorias_afectadas', 0)
+
+        # Cabecera con cifras destacadas
+        cifras = Table([[
+            Paragraph(
+                f'<font name="Times-Bold" size="22" color="#A88838">{total}</font><br/>'
+                f'<font name="Helvetica" size="7" color="#666666">incidencias</font>',
+                S('cn1','Helvetica',9,12,NEGRO,TA_CENTER)),
+            Paragraph(
+                f'<font name="Times-Bold" size="22" color="#A88838">{cats}</font><br/>'
+                f'<font name="Helvetica" size="7" color="#666666">categorías afectadas</font>',
+                S('cn2','Helvetica',9,12,NEGRO,TA_CENTER)),
+            Paragraph(
+                f'<font name="Times-Italic" size="9.5" color="#3A3A3A">{orto.get("resumen_corrector","")}</font>',
+                S('cn3','Times-Italic',9.5,13,GRIS_OSC,TA_JUSTIFY)),
+        ]], colWidths=[28*mm, 36*mm, W_DOC - 28*mm - 36*mm])
+        cifras.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,-1), CREMA),
+            ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('LEFTPADDING',(0,0),(-1,-1),8),
+            ('RIGHTPADDING',(0,0),(-1,-1),8),
+            ('TOPPADDING',(0,0),(-1,-1),10),
+            ('BOTTOMPADDING',(0,0),(-1,-1),10),
+            ('LINEBELOW',(0,0),(-1,-1),0.4, DORADO),
+        ]))
+        story.append(cifras)
+        story.append(Spacer(1, 8))
+
+        # Tabla de categorías detectadas con ejemplos
+        rows = [[
+            Paragraph('<font name="Helvetica-Bold" size="7" color="#A88838">CATEGORÍA</font>',
+                      S('och','Helvetica-Bold',7,10,DORADO)),
+            Paragraph('<font name="Helvetica-Bold" size="7" color="#A88838">CASOS</font>',
+                      S('ocn','Helvetica-Bold',7,10,DORADO,TA_CENTER)),
+            Paragraph('<font name="Helvetica-Bold" size="7" color="#A88838">EJEMPLO DETECTADO Y RECOMENDACIÓN</font>',
+                      S('oce','Helvetica-Bold',7,10,DORADO)),
+        ]]
+
+        def _esc(s):
+            return s.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+
+        for inc in orto.get('incidencias', []):
+            ejemplo_txt = ''
+            if inc.get('ejemplos'):
+                ej = _esc(inc['ejemplos'][0])
+                # Marcas « » → resaltado rojo del error detectado
+                ej = ej.replace('«', '<font color="#7A1F1F"><b>').replace('»', '</b></font>')
+                ejemplo_txt = (
+                    '<font name="Helvetica-Bold" size="6.5" color="#A88838">EJEMPLO DETECTADO</font><br/>'
+                    f'<font name="Times-Italic" size="8.5" color="#3A3A3A">{ej}</font><br/><br/>'
+                )
+
+            reco  = _esc(inc.get('recomendacion',''))
+            norma = _esc(inc.get('norma',''))
+            nota  = _esc(inc.get('nota',''))
+
+            celda_derecha = (
+                ejemplo_txt
+                + '<font name="Helvetica-Bold" size="6.5" color="#A88838">RECOMENDACIÓN</font><br/>'
+                + f'<font name="Helvetica" size="8" color="#1A1A1A">{reco}</font><br/><br/>'
+                + (f'<font name="Helvetica-Bold" size="6.5" color="#A88838">NORMA DE REFERENCIA</font><br/>'
+                   f'<font name="Times-Italic" size="7.5" color="#3A3A3A">{norma}</font><br/><br/>' if norma else '')
+                + (f'<font name="Helvetica-Bold" size="6.5" color="#A88838">NOTA</font><br/>'
+                   f'<font name="Helvetica" size="7.5" color="#666666">{nota}</font>' if nota else '')
+            )
+
+            rows.append([
+                Paragraph(
+                    f'<font name="Times-Bold" size="9.5" color="#1A1A1A">{_esc(inc["categoria"])}</font><br/>'
+                    f'<font name="Helvetica" size="7" color="#666666">{_esc(inc["descripcion"])}</font>',
+                    S('oct','Helvetica',8,11,NEGRO)),
+                Paragraph(
+                    f'<font name="Times-Bold" size="14" color="#A88838">{inc["ocurrencias"]}</font><br/>'
+                    f'<font name="Helvetica" size="6" color="#888888">casos</font>',
+                    S('ocnv','Helvetica-Bold',14,16,DORADO,TA_CENTER)),
+                Paragraph(
+                    celda_derecha,
+                    S('oer','Helvetica',8,11,GRIS_OSC,TA_JUSTIFY)),
+            ])
+
+        tbl = Table(rows, colWidths=[42*mm, 16*mm, W_DOC - 42*mm - 16*mm])
+        tbl.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0), CREMA),
+            ('LEFTPADDING',(0,0),(-1,-1),6),
+            ('RIGHTPADDING',(0,0),(-1,-1),6),
+            ('TOPPADDING',(0,0),(-1,-1),6),
+            ('BOTTOMPADDING',(0,0),(-1,-1),6),
+            ('VALIGN',(0,0),(-1,-1),'TOP'),
+            ('LINEBELOW',(0,0),(-1,-1),0.3, GRIS_LINEA),
+            ('LINEABOVE',(0,1),(-1,1),0.6, DORADO),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 6))
+
+        # Nota al pie
+        story.append(Paragraph(
+            '<font name="Times-Italic" size="7.5" color="#666666">'
+            'Análisis basado en la <b>Ortografía RAE 2010</b>, el <b>DLE 23.ª edición</b> y los criterios de '
+            '<b>Martínez de Sousa</b>. La corrección completa se realiza en una fase posterior, '
+            'tras la aprobación del autor del proyecto editorial.'
+            '</font>',
+            S('orf','Helvetica',7.5,11,GRIS,TA_JUSTIFY,
+              leftIndent=4*mm, rightIndent=4*mm)))
+        story.append(Spacer(1, 12))
+
+    # ── 9. Carta de la asesora al autor ──────────────────────────────────────
     carta = d.get('carta_autor', '').strip()
     if carta:
         story.append(_seccion('Una nota personal para el autor'))

@@ -354,6 +354,10 @@ def procesar_manuscrito():
         analisis = analizar_manuscrito(ms, titulo, autor,
                                        asesora_nombre=asesoras_n.get(asesora, asesora))
 
+        # 4-bis. Análisis ortotipográfico preliminar (RAE / Martínez de Sousa)
+        from corrector_preliminar import analizar_desde_bloques
+        ortotipo = analizar_desde_bloques(ms.bloques)
+
         # 4. Fecha en español
         from datetime import date
         hoy = date.today()
@@ -382,6 +386,7 @@ def procesar_manuscrito():
             'precio':            analisis.get('precio', ''),
             'notas':             analisis.get('notas', []),
             'carta_autor':       analisis.get('carta_autor', ''),
+            'ortotipo':          ortotipo,
         }
 
         informe_bytes = generar_informe(datos_informe)
@@ -427,6 +432,12 @@ def procesar_manuscrito():
             },
             'notas':             datos_informe['notas'],
             'carta_autor':       datos_informe['carta_autor'],
+            'ortotipo': {
+                'total':       ortotipo['total_incidencias'],
+                'categorias':  ortotipo['categorias_afectadas'],
+                'resumen':     ortotipo['resumen_corrector'],
+                'incidencias': ortotipo['incidencias'],
+            },
             'nombre_informe':    nombre_informe,
             'nombre_preview':    nombre_preview,
             'informe_pdf':   base64.b64encode(informe_bytes).decode(),

@@ -35,7 +35,7 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
     "string — Segunda nota editorial: estrategia de mercado, posicionamiento o presentación. Tono de profesional editorial con criterio comercial. Ejemplos: 'La obra encajaría con naturalidad en el catálogo de novela negra de autora, segmento con notable crecimiento desde 2020. Recomiendo presentación en ferias del libro especializadas y campaña dirigida a clubes de lectura femeninos.' / 'Por su perfil, considero recomendable trabajar el lanzamiento en colaboración con librerías independientes, donde el boca a boca puede activar las ventas durante el primer trimestre.'",
     "string — Tercera nota editorial: fortalezas que deben preservarse durante el proceso de edición. Reconocer con precisión técnica qué funciona. Ejemplos: 'La voz narrativa constituye el mayor activo del manuscrito. Recomiendo encarecidamente preservar su registro actual durante el proceso de corrección, limitando las intervenciones a ortotipografía y estilo menor.' / 'La estructura capitular breve y el ritmo sostenido son aciertos del autor. La edición debe respetar esta cadencia sin tentaciones de reordenación.'"
   ],
-  "carta_autor": "string — UNA CARTA PERSONAL DE LA ASESORA AL AUTOR, OBLIGATORIA en todos los informes (cierre humano y cercano). Estructura recomendada de 2-3 párrafos cortos: (1) Saludo por el nombre de pila si lo conocemos ('Querido Manuel') o 'Querido autor/Querida autora' si no hay nombre. Reconoce con palabras concretas algo específico del manuscrito que te ha llamado la atención (un personaje, una escena, el ritmo, la voz, la temática). (2) Mensaje de cercanía editorial: explica brevemente que Editorial Numancia trabaja de forma artesanal y que entiende que confiar un manuscrito es algo personal. (3) Cierre cálido: invita a continuar la conversación con un agradecimiento sincero. Tono: editora apasionada por los libros, que cree en el proyecto. Cercana pero profesional. Nunca artificial. Nunca comercial agresivo. La firma será {asesora_nombre} (no la incluyas tú, se añade automáticamente). Esta carta es OBLIGATORIA y nunca debe estar vacía."
+  "carta_autor": "string — CARTA DE CIERRE BREVE, PROFESIONAL Y MARKETINIANA dirigida al autor (perfil 45-70 años). OBLIGATORIA en todos los informes. ESTRUCTURA EN 2 PÁRRAFOS CORTOS (5-6 líneas en total, no más): (1) Saludo formal con tratamiento de respeto: 'Estimado señor {{primer_apellido_o_nombre}}' si tenemos apellido, o 'Estimado autor' si no. NUNCA usar 'Querido' (demasiado cercano para este perfil) ni el tuteo. Agradece la confianza depositada y reconoce con UNA frase concreta algo positivo del manuscrito. (2) Compromiso de acompañamiento: explica brevemente que la asesora le acompañará personalmente en TODAS las fases (corrección, maquetación, diseño de cubierta, depósito legal e ISBN, distribución, presentación), garantizando un libro a la altura. Cierra invitando a una reunión para exponer la propuesta editorial completa. Tono: profesional senior, cercano sin ser informal, con tono de compromiso editorial real. Tratamiento siempre 'usted'. La firma será {asesora_nombre} (no la incluyas tú). Esta carta es OBLIGATORIA y nunca debe estar vacía."
 }}
 
 REGLAS ESTRICTAS:
@@ -131,34 +131,48 @@ def analizar_manuscrito(ms, titulo: str, autor: str, asesora_nombre: str = '') -
 
 def _carta_personal_fallback(titulo: str, autor: str, asesora_nombre: str = '') -> str:
     """
-    Carta personal SIEMPRE presente — la asesora cierra el informe con
-    una valoración cálida y profesional. Si no hay nombre, se usa
-    'Querido autor / Querida autora' según contexto, o un saludo neutro.
+    Carta de cierre breve, profesional y cercana — adaptada a un perfil
+    de autor adulto (45-70 años). Tono editorial maduro, sin tuteo,
+    con compromiso de acompañamiento de principio a fin.
     """
-    nombre_pila = ''
+    # Detección de género por nombre de pila para "señor/señora"
+    def _es_femenino(n: str) -> bool:
+        n = n.lower().rstrip('.').strip()
+        # Excepciones: nombres masculinos terminados en -a
+        masc_a = {'luca','andrea','elia','noa','iván','iván','jonás','jonás','isaías'}
+        if n in masc_a: return False
+        # Femeninos comunes que no terminan en -a
+        fem_no_a = {'carmen','rocío','consuelo','dolores','mercedes','isabel',
+                    'soledad','esther','beatriz','inés','raquel','ester','noemí',
+                    'pilar','luz','sol','asunción','encarnación'}
+        if n in fem_no_a: return True
+        # Por defecto: termina en -a → femenino
+        return n.endswith('a')
+
+    saludo = 'Estimado autor'
     if autor and autor.strip():
         autor_norm = autor.strip().lower()
         if autor_norm not in ('anónimo','anonimo','autor','autora','sin autor','desconocido','anónima'):
-            # Coger primer nombre con la primera letra en mayúscula
-            primera = autor.strip().split()[0]
-            nombre_pila = primera[0].upper() + primera[1:].lower() if len(primera) > 1 else primera.upper()
-
-    saludo = f'Querido {nombre_pila}' if nombre_pila else 'Querido autor'
+            partes = autor.strip().split()
+            es_fem = _es_femenino(partes[0])
+            tratamiento = 'Estimada señora' if es_fem else 'Estimado señor'
+            if len(partes) >= 2:
+                apellidos = ' '.join(p.capitalize() for p in partes[1:])
+                saludo = f'{tratamiento} {apellidos}'
+            else:
+                saludo = f'{tratamiento} {partes[0].capitalize()}'
 
     cuerpo = (
-        f'{saludo}, ha sido un placer adentrarme en las páginas de tu manuscrito. '
-        f'En cada capítulo se percibe la dedicación y el cuidado con que has trabajado este proyecto, '
-        f'y eso es algo que valoramos profundamente en Editorial Numancia. '
-        f'Tu obra tiene voz propia, una virtud que no abunda y que merece llegar al lector con todo el '
-        f'respaldo editorial que un libro como el tuyo necesita.\n\n'
-        f'Sabemos que confiar un manuscrito a una editorial no es una decisión fácil: '
-        f'es entregar algo personal, fruto de mucho tiempo y esfuerzo. Por eso queremos decirte '
-        f'que aquí trabajamos de forma artesanal, acompañando cada paso del proceso —corrección, '
-        f'maquetación, diseño de cubierta, presentación al público— con la atención que cada obra '
-        f'merece. Si decides publicar con nosotros, no será un trámite editorial: '
-        f'será un trabajo conjunto.\n\n'
-        f'Estaremos encantadas de seguir conversando contigo y resolver cualquier duda. '
-        f'Gracias, de corazón, por haber pensado en nosotros para tu libro.'
+        f'{saludo}, le agradezco sinceramente la confianza depositada en '
+        f'Editorial Numancia al compartir su manuscrito con nosotros. '
+        f'Tras la valoración inicial, considero que su obra reúne '
+        f'cualidades editoriales sólidas y un planteamiento que merece llegar al lector '
+        f'con la mejor presentación posible.\n\n'
+        f'Si decide publicar con nosotros, le acompañaré personalmente en cada fase '
+        f'del proceso —corrección ortotipográfica, maquetación profesional, diseño de cubierta, '
+        f'depósito legal e ISBN, distribución y presentación pública—, garantizando un '
+        f'libro a la altura de su contenido. Quedo a su disposición para concertar una '
+        f'reunión y exponerle, con detalle, la propuesta editorial completa.'
     )
     return cuerpo
 

@@ -155,12 +155,10 @@ def _carta_personal_fallback(titulo: str, autor: str, asesora_nombre: str = '') 
         if autor_norm not in ('anónimo','anonimo','autor','autora','sin autor','desconocido','anónima'):
             partes = autor.strip().split()
             es_fem = _es_femenino(partes[0])
-            tratamiento = 'Estimada señora' if es_fem else 'Estimado señor'
-            if len(partes) >= 2:
-                apellidos = ' '.join(p.capitalize() for p in partes[1:])
-                saludo = f'{tratamiento} {apellidos}'
-            else:
-                saludo = f'{tratamiento} {partes[0].capitalize()}'
+            tratamiento = 'Estimada' if es_fem else 'Estimado'
+            # Usar nombre de pila capitalizado
+            nombre_pila = partes[0].capitalize()
+            saludo = f'{tratamiento} {nombre_pila}'
 
     cuerpo = (
         f'{saludo}, le agradezco sinceramente la confianza depositada en '
@@ -170,9 +168,9 @@ def _carta_personal_fallback(titulo: str, autor: str, asesora_nombre: str = '') 
         f'con la mejor presentación posible.\n\n'
         f'Si decide publicar con nosotros, le acompañaré personalmente en cada fase '
         f'del proceso —corrección ortotipográfica, maquetación profesional, diseño de cubierta, '
-        f'depósito legal e ISBN, distribución y presentación pública—, garantizando un '
-        f'libro a la altura de su contenido. Quedo a su disposición para concertar una '
-        f'reunión y exponerle, con detalle, la propuesta editorial completa.'
+        f'depósito legal, ISBN y distribución—, según los servicios que contrate, '
+        f'garantizando un libro a la altura de su contenido. Quedo a su disposición '
+        f'para concertar una reunión y exponerle, con detalle, la propuesta editorial completa.'
     )
     return cuerpo
 

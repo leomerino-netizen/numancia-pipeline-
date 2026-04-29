@@ -83,7 +83,7 @@ ASESORAS = {
     'laura': {
         'nombre':        'Laura Vega Ugarte',
         'iniciales':     'LV',
-        'ext':           '282',
+        'ext':           '282-283',
         'email':         'laura.vega@editorialnumancia.com',
         'foto':          _find(['fotos/laura.jpg', 'laura.jpg',
                                 'laura-asesora-editorial-editorial-numancia.jpg']),
@@ -93,7 +93,7 @@ ASESORAS = {
     'debora': {
         'nombre':        'Débora Tómas',
         'iniciales':     'DT',
-        'ext':           '283',
+        'ext':           '287',
         'email':         'debora.tomas@editorialnumancia.com',
         'foto':          _find(['fotos/debora.jpg', 'debora.jpg',
                                 'debora-asesora-editorial-numancia.jpg']),
@@ -103,7 +103,7 @@ ASESORAS = {
     'juan': {
         'nombre':        'Juan Muñoz',
         'iniciales':     'JM',
-        'ext':           '284',
+        'ext':           '289',
         'email':         'juan.munoz@editorialnumancia.com',
         'foto':          _find(['fotos/juan.jpg', 'juan.jpg',
                                 'juan-nunoz-maquetaror-editorial-numancia.jpg']),
@@ -114,7 +114,7 @@ ASESORAS = {
         'nombre':        'Nancy',
         'iniciales':     'NA',
         'ext':           '285',
-        'email':         'nancy@editorialnumancia.com',
+        'email':         'info@editorialnumancia.com',
         'foto':          _find(['fotos/nancy.jpg', 'nancy.jpg', 'Nancy.jpg']),
         'calendario':    'AGENDAR LLAMADA CON NANCY',
         'calendario_url':'https://printcolorweb.zohobookings.eu/#/nancy',

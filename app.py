@@ -148,43 +148,91 @@ def preview():
 @app.route('/maqueta', methods=['POST'])
 def maqueta():
     """
-    Body JSON:
-    {
-      "texto": "...",
-      "titulo": "...",
-      "autor": "...",
-      "anyo": "2025",
-      "dedicatoria": "...",
-      "epigrafe": "...",
-      "epigrafe_autor": "..."
-    }
+    Genera la maqueta completa A5 lista para imprenta.
+    
+    Acepta multipart/form-data:
+      - docx           (file, opcional pero recomendado)
+      - pdf            (file, alternativa a docx)
+      - titulo         (string, requerido)
+      - autor          (string)
+      - anyo           (string, default "2026")
+      - dedicatoria    (string)
+      - epigrafe       (string)
+      - epigrafe_autor (string)
+      - papel          (string, default "Papel offset 90 g/m²")
+      - cubierta_tipo  (string, default "Cartulina 300 g/m²")
+      - laminado       (string, default "Laminado brillante")
+    
+    También acepta JSON con los mismos campos + texto y docx_base64.
+    
+    Devuelve: PDF binario con Content-Type application/pdf
     """
     _check_auth()
     try:
+        # ── Modo multipart ────────────────────────────────────────────────
         if request.content_type and 'multipart' in request.content_type:
-            f = request.files.get('docx')
-            titulo = request.form.get('titulo','')
-            autor  = request.form.get('autor','')
-            anyo   = request.form.get('anyo','2025')
-            pdf = generar_maqueta_completa('', titulo, autor, anyo=anyo,
-                      docx_bytes=f.read() if f else None)
-        else:
-            d = request.get_json(force=True)
-            docx_b = None
-            if d.get('docx_base64'):
-                import base64
-                docx_b = base64.b64decode(d['docx_base64'])
+            archivo = None
+            for nc in ('docx', 'pdf', 'manuscrito', 'file', 'archivo'):
+                if nc in request.files:
+                    archivo = request.files[nc]; break
+            if archivo is None and request.files:
+                archivo = next(iter(request.files.values()))
+
+            docx_bytes = None
+            texto_pdf  = ''
+            if archivo:
+                contenido = archivo.read()
+                nombre    = (archivo.filename or '').lower()
+                es_pdf    = nombre.endswith('.pdf') or contenido[:4] == b'%PDF'
+                if es_pdf:
+                    from pdf_a_texto import parsear_pdf
+                    ms_pdf, _info = parsear_pdf(contenido)
+                    texto_pdf = '\n\n'.join(b.texto for b in ms_pdf.bloques)
+                else:
+                    docx_bytes = contenido
+
+            titulo = request.form.get('titulo', '').strip() or 'Sin título'
+            autor  = request.form.get('autor', '').strip()
+            anyo   = request.form.get('anyo', '2026')
+
             pdf = generar_maqueta_completa(
-                texto=d.get('texto',''),
-            titulo=d['titulo'],
-            autor=d['autor'],
-            anyo=d.get('anyo', '2025'),
-            dedicatoria=d.get('dedicatoria', ''),
-            epigrafe=d.get('epigrafe', ''),
-            epigrafe_autor=d.get('epigrafe_autor', ''),
+                texto          = texto_pdf,
+                titulo         = titulo,
+                autor          = autor,
+                anyo           = anyo,
+                dedicatoria    = request.form.get('dedicatoria', ''),
+                epigrafe       = request.form.get('epigrafe', ''),
+                epigrafe_autor = request.form.get('epigrafe_autor', ''),
+                docx_bytes     = docx_bytes,
+                papel          = request.form.get('papel',         'Papel offset 90 g/m²'),
+                cubierta_tipo  = request.form.get('cubierta_tipo', 'Cartulina 300 g/m²'),
+                laminado       = request.form.get('laminado',      'Laminado brillante'),
+            )
+            titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:60].strip()
+            return _pdf_response(pdf, f"Maqueta completa - {titulo_safe}.pdf")
+
+        # ── Modo JSON ─────────────────────────────────────────────────────
+        d = request.get_json(force=True)
+        docx_b = None
+        if d.get('docx_base64'):
+            import base64 as _b64
+            docx_b = _b64.b64decode(d['docx_base64'])
+        pdf = generar_maqueta_completa(
+            texto          = d.get('texto', ''),
+            titulo         = d.get('titulo', 'Sin título'),
+            autor          = d.get('autor', ''),
+            anyo           = d.get('anyo', '2026'),
+            dedicatoria    = d.get('dedicatoria', ''),
+            epigrafe       = d.get('epigrafe', ''),
+            epigrafe_autor = d.get('epigrafe_autor', ''),
+            docx_bytes     = docx_b,
+            papel          = d.get('papel',         'Papel offset 90 g/m²'),
+            cubierta_tipo  = d.get('cubierta_tipo', 'Cartulina 300 g/m²'),
+            laminado       = d.get('laminado',      'Laminado brillante'),
         )
-        titulo_safe = d.get('titulo', 'maqueta').replace(' ', '_')[:30]
-        return _pdf_response(pdf, f"maqueta_{titulo_safe}.pdf")
+        titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in d.get('titulo','maqueta'))[:60].strip()
+        return _pdf_response(pdf, f"Maqueta completa - {titulo_safe}.pdf")
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500

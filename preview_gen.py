@@ -126,7 +126,7 @@ def generar_preview(texto: str, titulo: str, autor: str,
 
     en_cap = False
     parrs = 0
-    MAX_P = 60        # ~ 10 páginas A5 con prosa normal
+    MAX_P = 120       # ~ 20 páginas A5 con prosa normal
     caps_vistos = 0
 
     for b in bloques:
@@ -135,9 +135,8 @@ def generar_preview(texto: str, titulo: str, autor: str,
 
         if t == 'cap_titulo':
             caps_vistos += 1
-            # Solo se muestra el PRIMER capítulo en el preview
-            if caps_vistos > 1:
-                break
+            # Permitir varios capítulos en el preview, hasta el límite de páginas (MAX_P).
+            # El break por MAX_P al inicio del bucle ya controla la longitud total.
             # Convención editorial: capítulos en página impar (recto).
             # Si la página actual es par, dejamos blanca la siguiente.
             story.append(NextPageTemplate('blanca'))

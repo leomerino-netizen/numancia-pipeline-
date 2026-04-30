@@ -40,11 +40,14 @@ def _pdf_response(pdf_bytes: bytes, filename: str):
 # ── Health check ──────────────────────────────────────────────────────────────
 @app.route('/', methods=['GET'])
 def health():
+    # Lista dinámica de todos los endpoints POST registrados en Flask
+    rutas = sorted({str(r) for r in app.url_map.iter_rules()
+                    if 'POST' in r.methods and 'static' not in str(r)})
     return jsonify({
         'status': 'ok',
         'service': 'Editorial Numancia — Document API',
-        'version': '1.0.0',
-        'endpoints': ['/presupuesto', '/informe', '/preview', '/maqueta'],
+        'version': '1.1.0',
+        'endpoints': rutas,
         'timestamp': datetime.utcnow().isoformat()
     })
 

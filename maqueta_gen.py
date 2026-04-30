@@ -303,7 +303,8 @@ def hdr_b(c, doc): pass
 def _pagina_creditos(story, titulo, autor, anyo, S,
                      papel='Papel offset 90 g/m²',
                      cubierta_tipo='Cartulina 300 g/m²',
-                     laminado='Laminado brillante'):
+                     laminado='Laminado brillante',
+                     isbn='', deposito_legal=''):
     story.append(Spacer(1, 6*mm))
 
     if LOGO_PATH:
@@ -349,8 +350,10 @@ def _pagina_creditos(story, titulo, autor, anyo, S,
                        textColor=CG, alignment=TA_JUSTIFY)))
 
     story.append(Spacer(1, 4*mm))
-    story.append(Paragraph('ISBN: Pendiente de asignación', S['cred_b']))
-    story.append(Paragraph('Depósito Legal: Pendiente de asignación', S['cred_b']))
+    isbn_txt = isbn.strip() if isbn else ''
+    dl_txt   = deposito_legal.strip() if deposito_legal else ''
+    story.append(Paragraph(f'ISBN: {isbn_txt}' if isbn_txt else 'ISBN: Pendiente de asignación', S['cred_b']))
+    story.append(Paragraph(f'Depósito Legal: {dl_txt}' if dl_txt else 'Depósito Legal: Pendiente de asignación', S['cred_b']))
 
     story.append(Spacer(1, 4*mm))
     story.append(Paragraph('Corrección y maquetación: Editorial Numancia', S['cred']))
@@ -376,7 +379,8 @@ def _pagina_creditos(story, titulo, autor, anyo, S,
 def prelims(story, titulo, autor, anyo, deds, epis, epi_autor, S,
             papel='Papel offset 90 g/m²',
             cubierta_tipo='Cartulina 300 g/m²',
-            laminado='Laminado brillante'):
+            laminado='Laminado brillante',
+            isbn='', deposito_legal=''):
 
     story.append(NextPageTemplate('portad')); story.append(PageBreak())
     story.append(Paragraph(titulo, S['port_t']))
@@ -394,7 +398,8 @@ def prelims(story, titulo, autor, anyo, deds, epis, epi_autor, S,
     story.append(Paragraph('Grupo Printcolorweb.com', S['cred_g']))
 
     story.append(NextPageTemplate('cred')); story.append(PageBreak())
-    _pagina_creditos(story, titulo, autor, anyo, S, papel, cubierta_tipo, laminado)
+    _pagina_creditos(story, titulo, autor, anyo, S, papel, cubierta_tipo, laminado,
+                     isbn=isbn, deposito_legal=deposito_legal)
 
     story.append(NextPageTemplate('ded')); story.append(PageBreak())
     for d in deds:
@@ -512,6 +517,8 @@ def generar_maqueta_completa(
     papel: str = 'Papel offset 90 g/m²',
     cubierta_tipo: str = 'Cartulina 300 g/m²',
     laminado: str = 'Laminado brillante',
+    isbn: str = '',
+    deposito_legal: str = '',
 ) -> bytes:
     from docx_parser import parsear_docx, Manuscrito
 
@@ -557,7 +564,8 @@ def generar_maqueta_completa(
 
     story = []
     prelims(story, titulo_real, autor_real, anyo,
-            deds, epis, epi_a, S, papel, cubierta_tipo, laminado)
+            deds, epis, epi_a, S, papel, cubierta_tipo, laminado,
+            isbn=isbn, deposito_legal=deposito_legal)
     story.append(NextPageTemplate('chap'))
     story.append(PageBreak())
     cuerpo(story, bloques, S)

@@ -453,10 +453,18 @@ def cuerpo(story, bloques, S):
 
         elif t in ('parrafo', 'dialogo'):
             if b.primer_parr and en_cap:
-                # Drop cap PRH con small caps
-                dc = DropCap(hx, CUERPO_W, sz_cap=38,
-                             sz_body=FS_BODY, ld=LD_BODY, small_caps=True)
-                story.append(dc)
+                # Drop cap PRH con small caps — solo si es prosa con texto suficiente
+                texto_limpio = re.sub(r'<[^>]+>', '', hx).strip()
+                es_dialogo   = (t == 'dialogo') or texto_limpio.startswith('—')
+                if (not es_dialogo) and len(texto_limpio) >= 8:
+                    try:
+                        dc = DropCap(hx, CUERPO_W, sz_cap=38,
+                                     sz_body=FS_BODY, ld=LD_BODY, small_caps=True)
+                        story.append(dc)
+                    except Exception:
+                        story.append(Paragraph(hx, S['body0']))
+                else:
+                    story.append(Paragraph(hx, S['body0'] if not es_dialogo else S['dial']))
                 en_cap = False
 
             elif t == 'dialogo':

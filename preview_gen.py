@@ -135,14 +135,18 @@ def generar_preview(texto: str, titulo: str, autor: str,
 
         if t == 'cap_titulo':
             caps_vistos += 1
-            # Permitir varios capítulos en el preview, hasta el límite de páginas (MAX_P).
-            # El break por MAX_P al inicio del bucle ya controla la longitud total.
-            # Convención editorial: capítulos en página impar (recto).
-            # Si la página actual es par, dejamos blanca la siguiente.
+            # Convención editorial PRH/Penguin: cada capítulo abre en página
+            # impar (recto/derecha). Si la página actual es par, dejamos blanca
+            # la siguiente (sin numeración visible — usa template 'blanca').
             story.append(NextPageTemplate('blanca'))
             story.append(PageBreak())
             story.append(_OddPageBreak())
             story.append(NextPageTemplate('chap'))
+
+            # Espacio de cortesía: el título no empieza pegado al borde superior.
+            # Dejamos aire visual para "respirar" la apertura del capítulo.
+            story.append(Spacer(1, 28*mm))
+
             m = re.match(r'^(CAP[IÍ]TULO)\s+(.+)$', tx, re.IGNORECASE)
             if m:
                 story.append(Paragraph(m.group(1).upper(), S['cap_lbl']))
@@ -153,6 +157,10 @@ def generar_preview(texto: str, titulo: str, autor: str,
                 story.append(Paragraph(tx.upper(), S['cap_lbl']))
             story.append(HRFlowable(width='14%', thickness=1, color=CG,
                                      hAlign='CENTER', spaceBefore=2, spaceAfter=8))
+
+            # Espacio antes del primer párrafo del capítulo (aire post-título)
+            story.append(Spacer(1, 8*mm))
+
             story.append(NextPageTemplate('recto'))
             en_cap = True
 

@@ -172,7 +172,18 @@ def generar_preview(texto: str, titulo: str, autor: str,
 
         elif t in ('parrafo', 'dialogo'):
             if b.primer_parr and en_cap:
-                story.append(DropCap(hx, CUERPO_W, sz_cap=38, sz_body=11, ld=13.5))
+                # DropCap solo si es un párrafo de prosa con texto suficiente
+                # (no diálogo, mínimo 8 caracteres). Si no, párrafo normal.
+                texto_limpio = re.sub(r'<[^>]+>', '', hx).strip()
+                es_dialogo   = (t == 'dialogo') or texto_limpio.startswith('—')
+                if (not es_dialogo) and len(texto_limpio) >= 8:
+                    try:
+                        story.append(DropCap(hx, CUERPO_W, sz_cap=38, sz_body=11, ld=13.5))
+                    except Exception:
+                        # Fallback: párrafo normal sin sangría
+                        story.append(Paragraph(hx, S['body0']))
+                else:
+                    story.append(Paragraph(hx, S['body0'] if not es_dialogo else S['dial']))
                 en_cap = False
             elif t == 'dialogo':
                 story.append(Paragraph(hx, S['dial']))

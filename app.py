@@ -306,6 +306,81 @@ def transformar():
         return jsonify({'error': str(e)}), 500
 
 
+
+@app.route('/generar-informe-pdf', methods=['POST'])
+def generar_informe_pdf():
+    """
+    Recibe el JSON de datos del informe (potencialmente editado por el asesor)
+    y devuelve solo el PDF del informe de lectura y valoración.
+    
+    Body JSON con todos los campos del informe:
+      titulo, autor, genero, ambientacion, extension,
+      fecha, evaluado_por, sinopsis_i, sinopsis_ii, sinopsis_iii,
+      eval (lista), veredicto, veredicto_texto,
+      lector_primario, lector_secundario, comparable, precio,
+      notas (lista), carta_autor, ortotipo (objeto opcional)
+    """
+    _check_auth()
+    try:
+        d = request.get_json(force=True)
+        # Si viene anidado como en /procesar-manuscrito, normalizar
+        if 'sinopsis' in d and isinstance(d['sinopsis'], dict):
+            d['sinopsis_i']  = d['sinopsis'].get('i','')
+            d['sinopsis_ii'] = d['sinopsis'].get('ii','')
+            d['sinopsis_iii']= d['sinopsis'].get('iii','')
+        if 'publico' in d and isinstance(d['publico'], dict):
+            d['lector_primario']   = d['publico'].get('lector_primario','')
+            d['lector_secundario'] = d['publico'].get('lector_secundario','')
+            d['comparable']        = d['publico'].get('comparable','')
+            d['precio']            = d['publico'].get('precio','')
+        if 'evaluacion' in d:
+            d['eval'] = d['evaluacion']
+        if 'asesora_nombre' in d and not d.get('evaluado_por'):
+            d['evaluado_por'] = d['asesora_nombre']
+
+        # Reconstruir ortotipo si viene en formato simplificado
+        orto = d.get('ortotipo')
+        if orto and 'incidencias' in orto and 'total' in orto and 'total_incidencias' not in orto:
+            d['ortotipo'] = {
+                'total_incidencias':    orto.get('total', 0),
+                'categorias_afectadas': orto.get('categorias', 0),
+                'resumen_corrector':    orto.get('resumen', ''),
+                'incidencias':          orto.get('incidencias', []),
+            }
+
+        pdf = generar_informe(d)
+        titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in d.get('titulo','informe'))[:50].strip()
+        return _pdf_response(pdf, f'Informe de lectura y valoracion - {titulo_safe}.pdf')
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/generar-preview-pdf', methods=['POST'])
+def generar_preview_pdf():
+    """
+    Recibe el JSON con titulo + autor + (docx_base64 O texto)
+    y devuelve solo el PDF del preview con marca de agua.
+    """
+    _check_auth()
+    try:
+        d = request.get_json(force=True)
+        titulo = d.get('titulo','Sin titulo')
+        autor  = d.get('autor','')
+        docx_b = None
+        if d.get('docx_base64'):
+            docx_b = base64.b64decode(d['docx_base64'])
+        if docx_b:
+            pdf = generar_preview('', titulo, autor, docx_bytes=docx_b)
+        else:
+            pdf = generar_preview(d.get('texto',''), titulo, autor)
+        titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip()
+        return _pdf_response(pdf, f'Maquetacion previa borrador - {titulo_safe}.pdf')
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port, debug=False)
@@ -344,6 +419,9 @@ def procesar_manuscrito():
         asesora    = request.form.get('asesora', 'laura')
         titulo_ovr = request.form.get('titulo', '')
         autor_ovr  = request.form.get('autor', '')
+        # Si incluir_pdfs=false, devolvemos solo los datos JSON (más rápido)
+        # para que el asesor edite antes de generar los PDFs.
+        incluir_pdfs = request.form.get('incluir_pdfs', 'true').lower() != 'false'
 
         # Detectar formato
         nombre_lower = nombre_fichero.lower()
@@ -441,14 +519,17 @@ def procesar_manuscrito():
             'ortotipo':          ortotipo,
         }
 
-        informe_bytes = generar_informe(datos_informe)
+        informe_bytes = b''
+        preview_bytes = b''
+        if incluir_pdfs:
+            informe_bytes = generar_informe(datos_informe)
 
-        # 6. Generar preview PDF
-        if docx_bytes_para_maqueta:
-            preview_bytes = generar_preview('', titulo, autor, docx_bytes=docx_bytes_para_maqueta)
-        else:
-            # Para PDF: pasar los bloques ya parseados para conservar estructura
-            preview_bytes = generar_preview('', titulo, autor, bloques=ms.bloques)
+            # 6. Generar preview PDF
+            if docx_bytes_para_maqueta:
+                preview_bytes = generar_preview('', titulo, autor, docx_bytes=docx_bytes_para_maqueta)
+            else:
+                # Para PDF: pasar los bloques ya parseados para conservar estructura
+                preview_bytes = generar_preview('', titulo, autor, bloques=ms.bloques)
 
         # 7. Nombres de archivo profesionales
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip()
@@ -492,8 +573,8 @@ def procesar_manuscrito():
             },
             'nombre_informe':    nombre_informe,
             'nombre_preview':    nombre_preview,
-            'informe_pdf':   base64.b64encode(informe_bytes).decode(),
-            'preview_pdf':   base64.b64encode(preview_bytes).decode(),
+            'informe_pdf':   base64.b64encode(informe_bytes).decode() if informe_bytes else '',
+            'preview_pdf':   base64.b64encode(preview_bytes).decode() if preview_bytes else '',
         })
 
     except Exception as e:

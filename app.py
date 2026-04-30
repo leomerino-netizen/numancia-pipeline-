@@ -207,6 +207,8 @@ def maqueta():
                 papel          = request.form.get('papel',         'Papel offset 90 g/m²'),
                 cubierta_tipo  = request.form.get('cubierta_tipo', 'Cartulina 300 g/m²'),
                 laminado       = request.form.get('laminado',      'Laminado brillante'),
+                isbn           = request.form.get('isbn', ''),
+                deposito_legal = request.form.get('deposito_legal', ''),
             )
             titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:60].strip()
             return _pdf_response(pdf, f"Maqueta completa - {titulo_safe}.pdf")
@@ -229,6 +231,8 @@ def maqueta():
             papel          = d.get('papel',         'Papel offset 90 g/m²'),
             cubierta_tipo  = d.get('cubierta_tipo', 'Cartulina 300 g/m²'),
             laminado       = d.get('laminado',      'Laminado brillante'),
+            isbn           = d.get('isbn', ''),
+            deposito_legal = d.get('deposito_legal', ''),
         )
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in d.get('titulo','maqueta'))[:60].strip()
         return _pdf_response(pdf, f"Maqueta completa - {titulo_safe}.pdf")

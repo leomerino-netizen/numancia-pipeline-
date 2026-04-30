@@ -417,12 +417,17 @@ def cuerpo(story, bloques, S):
         hx = b.html or tx
 
         if t == 'cap_titulo':
-            # Convención editorial: capítulos en página impar (recto)
-            story.append(NextPageTemplate('blank'))  # página par eventual = blanca
+            # Convención editorial PRH/Penguin: cada capítulo abre en página
+            # impar (recto/derecha). Si la página actual es par, dejamos blanca
+            # la siguiente (sin numeración visible — usa template 'blank').
+            story.append(NextPageTemplate('blank'))
             story.append(PageBreak())
             story.append(NextPageTemplate('chap'))
-            # Si la página actual sería par, salta una en blanco para llegar a impar
             story.append(_OddPageBreak())
+
+            # Espacio de cortesía superior — el título "respira" en la apertura
+            story.append(Spacer(1, 28*mm))
+
             m = re.match(r'^(CAP[IÍ]TULO)\s+(.+)$', tx, re.IGNORECASE)
             if m:
                 story.append(Paragraph(m.group(1).upper(), S['cap_lbl']))
@@ -433,6 +438,10 @@ def cuerpo(story, bloques, S):
                 story.append(Paragraph(tx.upper(), S['cap_lbl']))
             story.append(HRFlowable(width='12%', thickness=0.8, color=CG,
                                      hAlign='CENTER', spaceBefore=3, spaceAfter=10))
+
+            # Aire post-título antes del primer párrafo
+            story.append(Spacer(1, 8*mm))
+
             story.append(NextPageTemplate('recto'))
             en_cap = True
 

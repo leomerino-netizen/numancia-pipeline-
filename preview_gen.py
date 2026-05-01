@@ -133,6 +133,14 @@ def generar_preview(texto: str, titulo: str, autor: str,
         if parrs >= MAX_P: break
         t = b.tipo; tx = b.texto; hx = b.html or tx
 
+        # Página en blanco insertada manualmente por la asesora
+        if t == 'pagina_blanca':
+            story.append(NextPageTemplate('blanca'))
+            story.append(PageBreak())
+            # Tras la página blanca, volvemos al template de cuerpo normal
+            story.append(NextPageTemplate('recto'))
+            continue
+
         if t == 'cap_titulo':
             caps_vistos += 1
             # Convención editorial PRH/Penguin: cada capítulo abre en página

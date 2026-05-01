@@ -187,6 +187,28 @@ def parsear_docx(src) -> Manuscrito:
             break
 
     if primer_cap_idx and primer_cap_idx > 0:
+        # Contar párrafos vacíos consecutivos al final del preámbulo
+        # para detectar páginas en blanco intencionales antes del cap 1
+        vacios_antes_cap = 0
+        for j in range(primer_cap_idx - 1, -1, -1):
+            t_j, _ = _runs_html(parrs[j][1])
+            if not t_j:
+                vacios_antes_cap += 1
+            else:
+                break
+        # 15+ párrafos vacíos seguidos = página en blanco intencional antes del cap 1
+        # (ej: portada → blanca → cap 1)
+        if vacios_antes_cap >= 15:
+            ms.bloques.append(Bloque('pagina_blanca', '', ''))
+        # Detectar también page break explícito (Ctrl+Enter) en cualquier párrafo del preámbulo
+        else:
+            for _, p in parrs[:primer_cap_idx]:
+                if _tiene_page_break(p):
+                    if not ms.bloques or ms.bloques[-1].tipo != 'pagina_blanca':
+                        ms.bloques.append(Bloque('pagina_blanca', '', ''))
+                    break
+
+        # Procesar dedicatoria/epígrafe del preámbulo
         for _, p in parrs[:primer_cap_idx]:
             t, h = _runs_html(p)
             tl   = t.lower()

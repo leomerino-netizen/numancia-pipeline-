@@ -85,6 +85,18 @@ def _estilo(p):
     except: return 'normal'
 
 
+def _tiene_page_break(p):
+    """
+    Detecta si el párrafo contiene un page break explícito (Ctrl+Enter en Word).
+    Busca <w:br w:type="page"/> en el XML del párrafo.
+    """
+    try:
+        xml_str = p._p.xml if hasattr(p, '_p') else ''
+        return 'w:type="page"' in xml_str or "w:type='page'" in xml_str
+    except Exception:
+        return False
+
+
 def _es_cap(texto, estilo):
     if any(x in estilo for x in ['heading','título','title','chapter']): return True
     if _CAP_RE.match(texto) and len(texto) < 100: return True
@@ -111,8 +123,8 @@ def parsear_docx(src) -> Manuscrito:
     if cp.title:  ms.titulo = cp.title
     if cp.author: ms.autor  = cp.author
 
-    # Recoger todos los párrafos no vacíos con su índice
-    parrs = [(i, p) for i, p in enumerate(doc.paragraphs) if p.text.strip()]
+    # Recoger todos los párrafos (incluidos vacíos para detectar páginas en blanco)
+    parrs = [(i, p) for i, p in enumerate(doc.paragraphs)]
 
     # ── 1. Detectar y saltar índice/TOC inicial ───────────────────────────────
     # Criterio: bloque inicial donde TODOS son "Body Text" o tienen
@@ -187,14 +199,34 @@ def parsear_docx(src) -> Manuscrito:
     # ── 4. Parsear cuerpo ─────────────────────────────────────────────────────
     i = 0
     primer_tras_cap = False
+    parr_vacios_seguidos = 0   # contador de párrafos vacíos consecutivos
+    # Umbral alto: solo secuencias muy largas son verdaderas páginas en blanco
+    # intencionales (las separaciones cortas entre capítulos no cuentan).
+    UMBRAL_PAG_BLANCA  = 15
 
     while i < len(parrs):
         _, p = parrs[i]
         t, h = _runs_html(p)
         est  = _estilo(p)
 
-        if not t:
+        # ¿Tiene un page break explícito de Word (Ctrl+Enter)?
+        # Si el párrafo contiene <w:br w:type="page"/> y está vacío o casi,
+        # lo registramos como página en blanco intencional del autor.
+        if _tiene_page_break(p) and len(t) < 5:
+            # Solo emitimos una pagina_blanca si el bloque previo no es ya una
+            if not ms.bloques or ms.bloques[-1].tipo != 'pagina_blanca':
+                ms.bloques.append(Bloque('pagina_blanca', '', ''))
             i += 1; continue
+
+        if not t:
+            parr_vacios_seguidos += 1
+            # Si superamos el umbral, registramos UNA página en blanco
+            # (no varias seguidas: solo emitimos al pasar el umbral)
+            if parr_vacios_seguidos == UMBRAL_PAG_BLANCA:
+                ms.bloques.append(Bloque('pagina_blanca', '', ''))
+            i += 1; continue
+        else:
+            parr_vacios_seguidos = 0
 
         # Separador
         if _es_sep(t):

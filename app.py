@@ -362,26 +362,70 @@ def generar_informe_pdf():
 @app.route('/generar-preview-pdf', methods=['POST'])
 def generar_preview_pdf():
     """
-    Recibe el JSON con titulo + autor + (docx_base64 O texto)
+    Recibe el JSON con titulo + autor + (bloques | docx_base64 | texto)
     y devuelve solo el PDF del preview con marca de agua.
+    
+    Si llega 'bloques' (lista editada por la asesora), se usa esa lista
+    directamente. Si no, fallback a docx_base64 o texto plano.
     """
     _check_auth()
     try:
         d = request.get_json(force=True)
         titulo = d.get('titulo','Sin titulo')
         autor  = d.get('autor','')
-        docx_b = None
-        if d.get('docx_base64'):
+
+        # Prioridad 1: bloques editados por la asesora
+        if d.get('bloques'):
+            from docx_parser import Bloque
+            bloques_lista = []
+            for b in d['bloques']:
+                if not isinstance(b, dict): continue
+                # Saltarse bloques marcados como excluidos
+                if b.get('incluido') is False: continue
+                tipo  = b.get('tipo','parrafo')
+                texto = (b.get('texto') or '').strip()
+                if not texto: continue
+                html  = b.get('html') or texto
+                primer_parr = bool(b.get('primer_parr', False))
+                bloques_lista.append(Bloque(tipo, texto, html, primer_parr=primer_parr))
+            # Marcar primer párrafo tras cada cap_titulo automáticamente
+            siguiente_es_primero = False
+            for bl in bloques_lista:
+                if bl.tipo == 'cap_titulo':
+                    siguiente_es_primero = True
+                elif bl.tipo in ('parrafo','dialogo') and siguiente_es_primero:
+                    bl.primer_parr = True
+                    siguiente_es_primero = False
+            pdf = generar_preview('', titulo, autor, bloques=bloques_lista)
+        elif d.get('docx_base64'):
             docx_b = base64.b64decode(d['docx_base64'])
-        if docx_b:
             pdf = generar_preview('', titulo, autor, docx_bytes=docx_b)
         else:
             pdf = generar_preview(d.get('texto',''), titulo, autor)
+
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip()
         return _pdf_response(pdf, f'Maquetacion previa borrador - {titulo_safe}.pdf')
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+
+def _bloques_para_preview(bloques, max_bloques=140):
+    """
+    Convierte la lista de Bloque del parser en un array JSON simple
+    para que la asesora edite los párrafos antes de generar el preview.
+    Limita a max_bloques (~20 páginas A5).
+    """
+    salida = []
+    for b in bloques[:max_bloques]:
+        salida.append({
+            'tipo':        b.tipo,
+            'texto':       b.texto,
+            'html':        b.html or b.texto,
+            'primer_parr': bool(getattr(b, 'primer_parr', False)),
+            'incluido':    True,
+        })
+    return salida
 
 
 if __name__ == '__main__':
@@ -574,6 +618,7 @@ def procesar_manuscrito():
                 'resumen':     ortotipo['resumen_corrector'],
                 'incidencias': ortotipo['incidencias'],
             },
+            'bloques_preview':   _bloques_para_preview(ms.bloques, max_bloques=140),
             'nombre_informe':    nombre_informe,
             'nombre_preview':    nombre_preview,
             'informe_pdf':   base64.b64encode(informe_bytes).decode() if informe_bytes else '',

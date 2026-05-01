@@ -421,6 +421,13 @@ def cuerpo(story, bloques, S):
         tx = b.texto
         hx = b.html or tx
 
+        # Página en blanco insertada manualmente por la asesora
+        if t == 'pagina_blanca':
+            story.append(NextPageTemplate('blank'))
+            story.append(PageBreak())
+            story.append(NextPageTemplate('recto'))
+            continue
+
         if t == 'cap_titulo':
             # Convención editorial PRH/Penguin: cada capítulo abre en página
             # impar (recto/derecha). Si la página actual es par, dejamos blanca

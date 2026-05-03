@@ -371,8 +371,11 @@ def generar_preview_pdf():
     _check_auth()
     try:
         d = request.get_json(force=True)
-        titulo = d.get('titulo','Sin titulo')
-        autor  = d.get('autor','')
+        titulo         = d.get('titulo','Sin titulo')
+        autor          = d.get('autor','')
+        dedicatoria    = d.get('dedicatoria','')
+        epigrafe       = d.get('epigrafe','')
+        epigrafe_autor = d.get('epigrafe_autor','')
 
         # Prioridad 1: bloques editados por la asesora
         if d.get('bloques'):
@@ -384,7 +387,8 @@ def generar_preview_pdf():
                 if b.get('incluido') is False: continue
                 tipo  = b.get('tipo','parrafo')
                 texto = (b.get('texto') or '').strip()
-                if not texto: continue
+                # Las páginas en blanco se conservan aunque no tengan texto
+                if not texto and tipo != 'pagina_blanca': continue
                 html  = b.get('html') or texto
                 primer_parr = bool(b.get('primer_parr', False))
                 bloques_lista.append(Bloque(tipo, texto, html, primer_parr=primer_parr))
@@ -396,12 +400,18 @@ def generar_preview_pdf():
                 elif bl.tipo in ('parrafo','dialogo') and siguiente_es_primero:
                     bl.primer_parr = True
                     siguiente_es_primero = False
-            pdf = generar_preview('', titulo, autor, bloques=bloques_lista)
+            pdf = generar_preview('', titulo, autor, bloques=bloques_lista,
+                                  dedicatoria=dedicatoria,
+                                  epigrafe=epigrafe, epigrafe_autor=epigrafe_autor)
         elif d.get('docx_base64'):
             docx_b = base64.b64decode(d['docx_base64'])
-            pdf = generar_preview('', titulo, autor, docx_bytes=docx_b)
+            pdf = generar_preview('', titulo, autor, docx_bytes=docx_b,
+                                  dedicatoria=dedicatoria,
+                                  epigrafe=epigrafe, epigrafe_autor=epigrafe_autor)
         else:
-            pdf = generar_preview(d.get('texto',''), titulo, autor)
+            pdf = generar_preview(d.get('texto',''), titulo, autor,
+                                  dedicatoria=dedicatoria,
+                                  epigrafe=epigrafe, epigrafe_autor=epigrafe_autor)
 
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip()
         return _pdf_response(pdf, f'Maquetacion previa borrador - {titulo_safe}.pdf')

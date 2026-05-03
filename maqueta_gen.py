@@ -448,13 +448,13 @@ def cuerpo(story, bloques, S):
             continue
 
         if t == 'cap_titulo':
-            # Convención editorial PRH/Penguin: cada capítulo abre en página
-            # impar (recto/derecha). Si la página actual es par, dejamos blanca
-            # la siguiente (sin numeración visible — usa template 'blank').
+            # Convención editorial PRH/Penguin/Planeta: TODOS los capítulos
+            # abren SIEMPRE en página impar (recto). Si la página actual es par,
+            # se inserta automáticamente una blanca para forzar el siguiente recto.
             story.append(NextPageTemplate('blank'))
             story.append(PageBreak())
-            story.append(NextPageTemplate('chap'))
             story.append(_OddPageBreak())
+            story.append(NextPageTemplate('chap'))
 
             # Espacio superior mínimo — capítulo arranca cerca del margen
             story.append(Spacer(1, 8*mm))

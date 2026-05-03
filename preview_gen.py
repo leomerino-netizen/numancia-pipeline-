@@ -211,17 +211,14 @@ def generar_preview(texto: str, titulo: str, autor: str,
             # Apertura de capítulo: nueva página + posible blanca par.
             # Coste estimado: 1.5 páginas (la blanca para impar + la apertura).
             paginas_acum += 1.5
-            # Para el PRIMER capítulo arrancamos directamente (sin blancas
-            # previas) — el cuerpo no debe empezar con páginas vacías.
-            # Para el resto, convención editorial: capítulos en página impar (recto).
-            if caps_vistos == 1:
-                story.append(NextPageTemplate('chap'))
-                story.append(PageBreak())
-            else:
-                story.append(NextPageTemplate('blanca'))
-                story.append(PageBreak())
-                story.append(_OddPageBreak())
-                story.append(NextPageTemplate('chap'))
+            # Convención editorial PRH/Penguin/Planeta: TODOS los capítulos
+            # abren SIEMPRE en página impar (recto/derecha al abrir el libro),
+            # incluido el primero. Si la página actual cae par, se inserta
+            # una blanca automática para forzar el salto al siguiente recto.
+            story.append(NextPageTemplate('blanca'))
+            story.append(PageBreak())
+            story.append(_OddPageBreak())
+            story.append(NextPageTemplate('chap'))
 
             # Espacio mínimo superior — capítulo arranca cerca del margen
             story.append(Spacer(1, 8*mm))

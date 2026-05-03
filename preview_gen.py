@@ -14,7 +14,8 @@ from reportlab.platypus import (
 from maqueta_gen import (
     mk_frame, hdr_b, hdr_c, estilos, DropCap, _parse_texto,
     BF, BF_I, HF, HF_B, HF_I, HF_BI, CT, CG, CL, CUERPO_W,
-    AW, AH, M_INT, M_EXT, M_TOP, M_BOT, _OddPageBreak
+    AW, AH, M_INT, M_EXT, M_TOP, M_BOT, _OddPageBreak,
+    _pagina_creditos
 )
 
 def _wm(titulo, autor):
@@ -55,7 +56,10 @@ def _wm_cab(titulo, autor):
 
 
 def generar_preview(texto: str, titulo: str, autor: str,
-                    docx_bytes: bytes = None, bloques=None) -> bytes:
+                    docx_bytes: bytes = None, bloques=None,
+                    dedicatoria: str = '',
+                    epigrafe: str = '',
+                    epigrafe_autor: str = '') -> bytes:
     from docx_parser import parsear_docx, Manuscrito
 
     if bloques is not None:
@@ -73,6 +77,11 @@ def generar_preview(texto: str, titulo: str, autor: str,
 
     titulo_real = titulo or ms.titulo or 'Sin título'
     autor_real  = autor  or ms.autor  or ''
+    # Heredar dedicatoria/epígrafe del docx si no vienen explícitos
+    if not dedicatoria and getattr(ms, 'dedicatoria', None):
+        dedicatoria = ' '.join(ms.dedicatoria) if isinstance(ms.dedicatoria, list) else str(ms.dedicatoria)
+    if not epigrafe and getattr(ms, 'epigrafe', None):
+        epigrafe = ' '.join(ms.epigrafe) if isinstance(ms.epigrafe, list) else str(ms.epigrafe)
 
     S   = estilos()
     buf = io.BytesIO()
@@ -94,66 +103,128 @@ def generar_preview(texto: str, titulo: str, autor: str,
     ])
 
     story = []
-    # P1 blanca
+    # P1 blanca (guarda exterior)
     story.append(NextPageTemplate('portad')); story.append(PageBreak())
-    # P2 portadilla
+    # P2 blanca (cortesía)
+    story.append(NextPageTemplate('portad')); story.append(PageBreak())
+    # P3 portadilla — solo el título, centrado vertical
+    story.append(NextPageTemplate('portad'))
+    story.append(Spacer(1, 75*mm))
     story.append(Paragraph(titulo_real, S['port_t']))
-    story.append(Paragraph('novela', S['port_g']))
+    # P4 créditos completos (mismo bloque que maqueta)
+    story.append(NextPageTemplate('cred')); story.append(PageBreak())
+    _pagina_creditos(story, titulo_real, autor_real, '2026', S)
+    # P5 portada interior (autor + título + sello editorial)
     story.append(NextPageTemplate('portint')); story.append(PageBreak())
-    # P3 portada interior
     if autor_real:
         story.append(Paragraph(autor_real, S['port_a']))
     story.append(Paragraph(titulo_real,
         ParagraphStyle('pti2', fontName=HF_B, fontSize=17, leading=22,
                        textColor=CT, alignment=TA_CENTER,
-                       spaceBefore=48*mm if not autor_real else 5*mm)))
+                       spaceBefore=46*mm if not autor_real else 5*mm)))
     story.append(Paragraph('▪ EN ▪', S['port_s']))
     story.append(Paragraph('Editorial Numancia', S['cred_b']))
     story.append(Paragraph('Grupo Printcolorweb.com', S['cred_g']))
-    story.append(NextPageTemplate('cred')); story.append(PageBreak())
-    # P4 créditos mínimos
-    story.append(Spacer(1, 38*mm))
-    story.append(Paragraph('PRUEBA DE MAQUETA — documento confidencial', S['cred_b']))
-    story.append(Spacer(1, 3*mm))
-    story.append(Paragraph('Corrección y maquetación: Editorial Numancia', S['cred']))
-    story.append(Spacer(1, 10*mm))
-    story.append(Paragraph('▪ EN ▪', S['cred_b']))
-    story.append(Paragraph('Editorial Numancia', S['cred_b']))
-    story.append(Paragraph('Grupo Printcolorweb.com', S['cred_g']))
 
-    # Primer capítulo
-    story.append(NextPageTemplate('chap')); story.append(PageBreak())
+    # Estilo para placeholders de páginas reservadas
+    placeholder_style = ParagraphStyle(
+        'placeholder', fontName=HF_I, fontSize=10, leading=14,
+        textColor=CG, alignment=TA_CENTER,
+        leftIndent=20*mm, rightIndent=20*mm)
+
+    # P6 blanca (verso de portada interior)
+    story.append(NextPageTemplate('portad')); story.append(PageBreak())
+
+    # P7 página reservada para DEDICATORIA (recto/derecha)
+    story.append(NextPageTemplate('portad')); story.append(PageBreak())
+    if dedicatoria and str(dedicatoria).strip():
+        story.append(Spacer(1, 70*mm))
+        ded_style = ParagraphStyle('ded', fontName=HF_I, fontSize=11.5, leading=16,
+                                    textColor=CT, alignment=TA_CENTER,
+                                    leftIndent=15*mm, rightIndent=15*mm)
+        story.append(Paragraph(str(dedicatoria).strip(), ded_style))
+    else:
+        story.append(Spacer(1, 90*mm))
+        story.append(Paragraph(
+            '— Página reservada para la <b>dedicatoria</b> —<br/>'
+            '<font size="8">Se completará al aprobar la maquetación</font>',
+            placeholder_style))
+
+    # P8 blanca (verso de dedicatoria)
+    story.append(NextPageTemplate('portad')); story.append(PageBreak())
+
+    # P9 página reservada para EPÍGRAFE (recto/derecha)
+    story.append(NextPageTemplate('portad')); story.append(PageBreak())
+    if epigrafe and str(epigrafe).strip():
+        story.append(Spacer(1, 70*mm))
+        epi_style = ParagraphStyle('epi', fontName=HF_I, fontSize=10.5, leading=15,
+                                    textColor=CT, alignment=TA_CENTER,
+                                    leftIndent=20*mm, rightIndent=20*mm)
+        story.append(Paragraph(f'«{str(epigrafe).strip()}»', epi_style))
+        if epigrafe_autor and str(epigrafe_autor).strip():
+            story.append(Spacer(1, 4*mm))
+            epi_a_style = ParagraphStyle('epi_a', fontName=HF, fontSize=9, leading=12,
+                                          textColor=CG, alignment=TA_CENTER)
+            story.append(Paragraph(f'— {str(epigrafe_autor).strip()}', epi_a_style))
+    else:
+        story.append(Spacer(1, 90*mm))
+        story.append(Paragraph(
+            '— Página reservada para el <b>epígrafe</b> —<br/>'
+            '<font size="8">Se completará al aprobar la maquetación</font>',
+            placeholder_style))
+
+    # P10 blanca (verso de epígrafe) → cuerpo arranca en P11 impar
+
+    # Filtrar páginas en blanco al inicio de la lista (no tienen sentido
+    # antes del primer contenido). Luego se procesan donde correspondan.
+    while bloques and bloques[0].tipo == 'pagina_blanca':
+        bloques = bloques[1:]
+
+    # Si el primer bloque NO es un capítulo (es prólogo/párrafo suelto),
+    # añadimos un PageBreak para que arranque en la siguiente página.
+    # Si es cap_titulo, el propio bucle ya lo hace.
+    if bloques and bloques[0].tipo != 'cap_titulo':
+        story.append(NextPageTemplate('chap'))
+        story.append(PageBreak())
 
     en_cap = False
-    parrs = 0
-    MAX_P = 120       # ~ 20 páginas A5 con prosa normal
-    caps_vistos = 0
+    # Estimación de páginas A5 acumuladas para limitar el preview a 20 pág.
+    paginas_acum    = 0.0
+    MAX_PAGINAS     = 18     # heurística conservadora — el render puede añadir 1-2 más
+    PARR_POR_PAG    = 5.5
+    caps_vistos     = 0
 
     for b in bloques:
-        if parrs >= MAX_P: break
+        if paginas_acum >= MAX_PAGINAS: break
         t = b.tipo; tx = b.texto; hx = b.html or tx
 
         # Página en blanco insertada manualmente por la asesora
         if t == 'pagina_blanca':
+            paginas_acum += 1.0   # consume una página completa
             story.append(NextPageTemplate('blanca'))
             story.append(PageBreak())
-            # Tras la página blanca, volvemos al template de cuerpo normal
             story.append(NextPageTemplate('recto'))
             continue
 
         if t == 'cap_titulo':
             caps_vistos += 1
-            # Convención editorial PRH/Penguin: cada capítulo abre en página
-            # impar (recto/derecha). Si la página actual es par, dejamos blanca
-            # la siguiente (sin numeración visible — usa template 'blanca').
-            story.append(NextPageTemplate('blanca'))
-            story.append(PageBreak())
-            story.append(_OddPageBreak())
-            story.append(NextPageTemplate('chap'))
+            # Apertura de capítulo: nueva página + posible blanca par.
+            # Coste estimado: 1.5 páginas (la blanca para impar + la apertura).
+            paginas_acum += 1.5
+            # Para el PRIMER capítulo arrancamos directamente (sin blancas
+            # previas) — el cuerpo no debe empezar con páginas vacías.
+            # Para el resto, convención editorial: capítulos en página impar (recto).
+            if caps_vistos == 1:
+                story.append(NextPageTemplate('chap'))
+                story.append(PageBreak())
+            else:
+                story.append(NextPageTemplate('blanca'))
+                story.append(PageBreak())
+                story.append(_OddPageBreak())
+                story.append(NextPageTemplate('chap'))
 
-            # Espacio de cortesía: el título no empieza pegado al borde superior.
-            # Dejamos aire visual para "respirar" la apertura del capítulo.
-            story.append(Spacer(1, 28*mm))
+            # Espacio mínimo superior — capítulo arranca cerca del margen
+            story.append(Spacer(1, 8*mm))
 
             m = re.match(r'^(CAP[IÍ]TULO)\s+(.+)$', tx, re.IGNORECASE)
             if m:
@@ -164,10 +235,10 @@ def generar_preview(texto: str, titulo: str, autor: str,
             else:
                 story.append(Paragraph(tx.upper(), S['cap_lbl']))
             story.append(HRFlowable(width='14%', thickness=1, color=CG,
-                                     hAlign='CENTER', spaceBefore=2, spaceAfter=8))
+                                     hAlign='CENTER', spaceBefore=2, spaceAfter=6))
 
-            # Espacio antes del primer párrafo del capítulo (aire post-título)
-            story.append(Spacer(1, 8*mm))
+            # Espacio post-título mínimo
+            story.append(Spacer(1, 4*mm))
 
             story.append(NextPageTemplate('recto'))
             en_cap = True
@@ -199,7 +270,14 @@ def generar_preview(texto: str, titulo: str, autor: str,
                 story.append(Paragraph(hx, S['body0'])); en_cap = False
             else:
                 story.append(Paragraph(hx, S['body']))
-            parrs += 1
+            # Cada párrafo o diálogo consume aproximadamente 1/PARR_POR_PAG de página.
+            # Diálogos cortos cuentan menos.
+            if t == 'dialogo':
+                paginas_acum += 1.0 / (PARR_POR_PAG * 1.5)
+            else:
+                # Párrafo largo cuenta como 1.5 unidades, normal 1.
+                long_factor = 1.5 if len(tx) > 350 else 1.0
+                paginas_acum += long_factor / PARR_POR_PAG
 
     doc.build(story)
     return buf.getvalue()

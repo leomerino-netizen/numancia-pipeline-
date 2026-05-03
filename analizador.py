@@ -26,16 +26,16 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
   ],
   "veredicto": "PUBLICABLE | CON MEJORAS | REQUIERE REVISIÓN",
   "veredicto_texto": "string — 3-4 líneas justificando el veredicto en tono profesional editorial. Si es PUBLICABLE o CON MEJORAS, mostrar entusiasmo controlado.",
-  "lector_primario":   "string — perfil específico del lector ideal con franja de edad y perfil sociocultural",
-  "lector_secundario": "string — segundo perfil de lector",
-  "comparable":        "string — 1-2 títulos publicados comparables (autor + obra entre comillas)",
+  "lector_primario":   "string — perfil específico del lector ideal: franja de edad concreta + perfil sociocultural + intereses lectores. Ejemplo: 'Lectora adulta de 35-55 años, aficionada a la novela negra contemporánea, lectora habitual de Dolores Redondo y María Oruña, suscriptora de clubes de lectura'",
+  "lector_secundario": "string — segundo perfil de lector ampliado, más generalista. Ejemplo: 'Lector general de 25-65 años interesado en thrillers psicológicos con ambientación rural española'",
+  "comparable":        "string — TRES títulos publicados realmente existentes que el público objetivo ya conoce, en formato 'Autor 1 · «Título 1» · Autor 2 · «Título 2» · Autor 3 · «Título 3»'. Los nombres deben ser autores reales del panorama editorial español o internacional con obra comparable en género, tono o público. NUNCA dejes este campo vacío ni pongas 'Por concretar'.",
   "precio":            "string — rango de precio sugerido con formato (ej: 18,90 € — 21,90 € rústica con solapas)",
   "notas": [
     "string — Primera nota editorial: aspecto técnico o estilístico CONCRETO a trabajar en el proceso de edición. Lenguaje editorial profesional, sin frases vacías. Mencionar capítulos, escenas o elementos específicos cuando sea posible. Ejemplos del registro deseado: 'Recomiendo unificar la temporalidad narrativa en los capítulos centrales, donde se detectan oscilaciones entre presente y pretérito imperfecto que pueden desorientar al lector.' / 'La caracterización del antagonista podría ganar profundidad incorporando una escena previa que justifique sus motivaciones.' / 'Sugiero revisar la cadencia de los diálogos en las escenas de mayor tensión, donde el ritmo se ralentiza por incisos demasiado extensos.'",
     "string — Segunda nota editorial: estrategia de mercado, posicionamiento o presentación. Tono de profesional editorial con criterio comercial. Ejemplos: 'La obra encajaría con naturalidad en el catálogo de novela negra de autora, segmento con notable crecimiento desde 2020. Recomiendo presentación en ferias del libro especializadas y campaña dirigida a clubes de lectura femeninos.' / 'Por su perfil, considero recomendable trabajar el lanzamiento en colaboración con librerías independientes, donde el boca a boca puede activar las ventas durante el primer trimestre.'",
     "string — Tercera nota editorial: fortalezas que deben preservarse durante el proceso de edición. Reconocer con precisión técnica qué funciona. Ejemplos: 'La voz narrativa constituye el mayor activo del manuscrito. Recomiendo encarecidamente preservar su registro actual durante el proceso de corrección, limitando las intervenciones a ortotipografía y estilo menor.' / 'La estructura capitular breve y el ritmo sostenido son aciertos del autor. La edición debe respetar esta cadencia sin tentaciones de reordenación.'"
   ],
-  "carta_autor": "string — CARTA DE CIERRE BREVE, PROFESIONAL Y MARKETINIANA dirigida al autor (perfil 45-70 años). OBLIGATORIA en todos los informes. ESTRUCTURA EN 2 PÁRRAFOS CORTOS (5-6 líneas en total, no más): (1) Saludo formal con tratamiento de respeto: 'Estimado señor {{primer_apellido_o_nombre}}' si tenemos apellido, o 'Estimado autor' si no. NUNCA usar 'Querido' (demasiado cercano para este perfil) ni el tuteo. Agradece la confianza depositada y reconoce con UNA frase concreta algo positivo del manuscrito. (2) Compromiso de acompañamiento: explica brevemente que la asesora le acompañará personalmente en TODAS las fases (corrección, maquetación, diseño de cubierta, depósito legal e ISBN, distribución, presentación), garantizando un libro a la altura. Cierra invitando a una reunión para exponer la propuesta editorial completa. Tono: profesional senior, cercano sin ser informal, con tono de compromiso editorial real. Tratamiento siempre 'usted'. La firma será {asesora_nombre} (no la incluyas tú). Esta carta es OBLIGATORIA y nunca debe estar vacía."
+  "carta_autor": "string — CARTA DE CIERRE BREVE, PROFESIONAL Y CERCANA dirigida al autor con TUTEO. OBLIGATORIA en todos los informes. ESTRUCTURA EN 2 PÁRRAFOS CORTOS (5-6 líneas en total, no más): (1) Saludo cercano: 'Estimado/a {{nombre_de_pila}}' (NUNCA apellido, NUNCA 'señor/a'). Si no hay nombre, 'Estimado autor'. Agradece la confianza depositada y reconoce con UNA frase concreta algo positivo del manuscrito. (2) Compromiso de acompañamiento: explica brevemente que la asesora te acompañará personalmente en TODAS las fases (corrección, maquetación, diseño de cubierta, depósito legal e ISBN, distribución), según los servicios que contrate, garantizando un libro a la altura. Cierra invitando a una reunión. Tono: cercano y profesional, con tuteo natural ('te agradezco', 'tu obra', 'tu manuscrito', 'te acompañaré', 'si decides', 'según los servicios que contrates'). NUNCA usar 'usted' ni 'le acompañaré'. La firma será {asesora_nombre} (no la incluyas tú). Esta carta es OBLIGATORIA y nunca debe estar vacía."
 }}
 
 REGLAS ESTRICTAS:
@@ -161,16 +161,16 @@ def _carta_personal_fallback(titulo: str, autor: str, asesora_nombre: str = '') 
             saludo = f'{tratamiento} {nombre_pila}'
 
     cuerpo = (
-        f'{saludo}, le agradezco sinceramente la confianza depositada en '
-        f'Editorial Numancia al compartir su manuscrito con nosotros. '
-        f'Tras la valoración inicial, considero que su obra reúne '
+        f'{saludo}, te agradezco sinceramente la confianza depositada en '
+        f'Editorial Numancia al compartir tu manuscrito con nosotros. '
+        f'Tras la valoración inicial, considero que tu obra reúne '
         f'cualidades editoriales sólidas y un planteamiento que merece llegar al lector '
         f'con la mejor presentación posible.\n\n'
-        f'Si decide publicar con nosotros, le acompañaré personalmente en cada fase '
+        f'Si decides publicar con nosotros, te acompañaré personalmente en cada fase '
         f'del proceso —corrección ortotipográfica, maquetación profesional, diseño de cubierta, '
-        f'depósito legal, ISBN y distribución—, según los servicios que contrate, '
-        f'garantizando un libro a la altura de su contenido. Quedo a su disposición '
-        f'para concertar una reunión y exponerle, con detalle, la propuesta editorial completa.'
+        f'depósito legal, ISBN y distribución—, según los servicios que contrates, '
+        f'garantizando un libro a la altura de tu contenido. Quedo a tu disposición '
+        f'para concertar una reunión y exponerte, con detalle, la propuesta editorial completa.'
     )
     return cuerpo
 
@@ -200,9 +200,9 @@ def _fallback_profesional(titulo, autor, palabras, capitulos, extracto, asesora_
         ],
         'veredicto':       'CON MEJORAS',
         'veredicto_texto': 'Tras esta primera valoración editorial, el manuscrito presenta cualidades narrativas y estructurales que justifican su consideración para el catálogo de Editorial Numancia. La obra requiere un proceso de pulido editorial estándar, en el que se trabajarán de forma conjunta con el autor los aspectos identificados durante la lectura analítica posterior. El manuscrito demuestra el oficio necesario para abordar la siguiente fase con expectativas razonables de un resultado profesional.',
-        'lector_primario':   'Lector adulto de narrativa contemporánea',
-        'lector_secundario': 'Lector aficionado al género',
-        'comparable':        'Por concretar tras lectura completa',
+        'lector_primario':   'Lector adulto de 35-60 años, aficionado a la narrativa contemporánea española, lector habitual de novelas de autor con cierta complejidad temática. Perfil sociocultural medio-alto, suscriptor de clubes de lectura o seguidor de programas culturales.',
+        'lector_secundario': 'Lector general de 25-70 años interesado en obras con voz propia y planteamiento literario cuidado. Comprador habitual en librerías independientes y usuario de plataformas de recomendación lectora.',
+        'comparable':        'Almudena Grandes · «Los pacientes del doctor García» · Sara Mesa · «Cara de pan» · Manuel Vilas · «Ordesa»',
         'precio':            '18,90 € — 21,90 €',
         'notas': [
             f'Tras una primera lectura, la obra presenta una arquitectura narrativa coherente articulada en {capitulos} capítulos. Recomiendo proceder a una segunda lectura analítica para identificar los puntos exactos de intervención editorial, especialmente en lo que respecta a transiciones entre escenas y dosificación de la información.',

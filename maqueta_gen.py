@@ -382,10 +382,19 @@ def prelims(story, titulo, autor, anyo, deds, epis, epi_autor, S,
             laminado='Laminado brillante',
             isbn='', deposito_legal=''):
 
-    story.append(NextPageTemplate('portad')); story.append(PageBreak())
+    # P1 blanca (guarda exterior)
+    story.append(NextPageTemplate('blank')); story.append(PageBreak())
+    # P2 blanca (cortesía)
+    story.append(NextPageTemplate('blank')); story.append(PageBreak())
+    # P3 portadilla (solo título)
+    story.append(NextPageTemplate('portad'))
+    story.append(Spacer(1, 75*mm))   # centrado vertical en A5
     story.append(Paragraph(titulo, S['port_t']))
-    story.append(Paragraph('novela', S['port_g']))
-
+    # P4 créditos (verso)
+    story.append(NextPageTemplate('cred')); story.append(PageBreak())
+    _pagina_creditos(story, titulo, autor, anyo, S, papel, cubierta_tipo, laminado,
+                     isbn=isbn, deposito_legal=deposito_legal)
+    # P5 portada interior (recto: autor + título + sello)
     story.append(NextPageTemplate('portint')); story.append(PageBreak())
     if autor:
         story.append(Paragraph(autor, S['port_a']))
@@ -396,24 +405,34 @@ def prelims(story, titulo, autor, anyo, deds, epis, epi_autor, S,
     story.append(Paragraph('▪ EN ▪', S['port_s']))
     story.append(Paragraph('Editorial Numancia', S['cred_b']))
     story.append(Paragraph('Grupo Printcolorweb.com', S['cred_g']))
-
-    story.append(NextPageTemplate('cred')); story.append(PageBreak())
-    _pagina_creditos(story, titulo, autor, anyo, S, papel, cubierta_tipo, laminado,
-                     isbn=isbn, deposito_legal=deposito_legal)
-
-    story.append(NextPageTemplate('ded')); story.append(PageBreak())
-    for d in deds:
-        story.append(Paragraph(d, S['ded']))
-
-    story.append(NextPageTemplate('epi')); story.append(PageBreak())
-    for e in epis:
-        story.append(Paragraph(e, S['epi']))
-    if epi_autor:
-        story.append(Paragraph(f'— {epi_autor}', S['epi_a']))
+    # P6 blanca (verso de portada interior)
+    story.append(NextPageTemplate('blank')); story.append(PageBreak())
+    # P7 dedicatoria (si existe). Si no, otra blanca.
+    if deds and any(str(d).strip() for d in deds):
+        story.append(NextPageTemplate('ded')); story.append(PageBreak())
+        for d in deds:
+            if str(d).strip():
+                story.append(Paragraph(d, S['ded']))
+        # P8 blanca (verso de dedicatoria)
+        story.append(NextPageTemplate('blank')); story.append(PageBreak())
+    # Epígrafe (si existe)
+    if epis and any(str(e).strip() for e in epis):
+        story.append(NextPageTemplate('epi')); story.append(PageBreak())
+        for e in epis:
+            if str(e).strip():
+                story.append(Paragraph(e, S['epi']))
+        if epi_autor:
+            story.append(Paragraph(f'— {epi_autor}', S['epi_a']))
+        story.append(NextPageTemplate('blank')); story.append(PageBreak())
 
 
 # ── Cuerpo ────────────────────────────────────────────────────────────────────
 def cuerpo(story, bloques, S):
+    # Filtrar páginas en blanco al inicio del cuerpo (no tienen sentido
+    # antes del primer capítulo). El cuerpo siempre arranca con contenido.
+    while bloques and bloques[0].tipo == 'pagina_blanca':
+        bloques = bloques[1:]
+
     en_cap = False
 
     for b in bloques:
@@ -437,8 +456,8 @@ def cuerpo(story, bloques, S):
             story.append(NextPageTemplate('chap'))
             story.append(_OddPageBreak())
 
-            # Espacio de cortesía superior — el título "respira" en la apertura
-            story.append(Spacer(1, 28*mm))
+            # Espacio superior mínimo — capítulo arranca cerca del margen
+            story.append(Spacer(1, 8*mm))
 
             m = re.match(r'^(CAP[IÍ]TULO)\s+(.+)$', tx, re.IGNORECASE)
             if m:
@@ -449,10 +468,10 @@ def cuerpo(story, bloques, S):
             else:
                 story.append(Paragraph(tx.upper(), S['cap_lbl']))
             story.append(HRFlowable(width='12%', thickness=0.8, color=CG,
-                                     hAlign='CENTER', spaceBefore=3, spaceAfter=10))
+                                     hAlign='CENTER', spaceBefore=3, spaceAfter=8))
 
-            # Aire post-título antes del primer párrafo
-            story.append(Spacer(1, 8*mm))
+            # Espacio post-título mínimo
+            story.append(Spacer(1, 4*mm))
 
             story.append(NextPageTemplate('recto'))
             en_cap = True

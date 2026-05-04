@@ -127,23 +127,26 @@ class DropCap(Flowable):
         self._3lines    = 3 * ld
 
     def wrap(self, aw, ah):
-        # Si el frame nos da dimensiones inválidas (puede ocurrir tras un
-        # PageBreak especial), devolvemos un alto mínimo para no romper el layout.
+        # GUARDA ANTI-LAYOUTERROR: ReportLab valida que el flowable NO sea más
+        # grande que el frame. Si nos pasan ancho 0 o alto 0, devolvemos
+        # dimensiones mínimas pero positivas (1pt) para evitar el LayoutError.
         if aw <= 0 or ah <= 0:
-            self._total = self._3lines
-            self._h_resto = self._3lines
-            self._aw = max(self.ancho, 1)
-            return self._aw, self._3lines
+            self._total   = 1
+            self._h_resto = 1
+            self._aw      = 1
+            self._skip    = True
+            return 1, 1
 
+        self._skip = False
         self._aw  = aw
         cap_w     = self.sz_cap * 0.66
         mx        = cap_w + 2 * mm
-        aw2       = max(self.ancho - mx, 10)  # mínimo de 10pt para evitar 0
+        aw2       = max(min(aw, self.ancho) - mx, 10)
 
-        # Preparar texto con small caps si procede
+        # Preparar texto
         raw  = re.sub(r'<[^>]+>', '', self.html).strip()
         if not raw or len(raw) < 2:
-            self._total = self._3lines
+            self._total   = self._3lines
             self._h_resto = self._3lines
             return aw, self._3lines
 
@@ -154,11 +157,14 @@ class DropCap(Flowable):
             st = RPS('dc_w', fontName=BF, fontSize=self.sz_body, leading=self.ld,
                      textColor=CT, alignment=TA_JUSTIFY, firstLineIndent=0)
             _, h = RP(resto_html, st).wrap(aw2, 400)
-            self._total = max(self._3lines, h)
+            self._total   = max(self._3lines, h)
             self._h_resto = h
         except Exception:
-            self._total = self._3lines
+            self._total   = self._3lines
             self._h_resto = self._3lines
+        # Validación final: el alto NUNCA puede ser mayor que el frame disponible
+        if self._total > ah:
+            self._total = min(self._total, ah - 1) if ah > 1 else 1
         return aw, self._total
 
     def _build_resto(self, raw: str) -> str:
@@ -174,6 +180,9 @@ class DropCap(Flowable):
         return sc + rest
 
     def draw(self):
+        # Si wrap detectó dimensiones inválidas, no dibujamos nada.
+        if getattr(self, '_skip', False):
+            return
         try:
             c   = self.canv
             raw = re.sub(r'<[^>]+>', '', self.html).strip()
@@ -182,7 +191,7 @@ class DropCap(Flowable):
             letra = raw[0]
             cap_w = self.sz_cap * 0.66
             mx    = cap_w + 2 * mm
-            aw2   = max(self.ancho - mx, 10)
+            aw2   = max(min(self._aw, self.ancho) - mx, 10)
 
             # Letra capital — base alineada con baseline de 1ª línea
             baseline = self._total - self.ld

@@ -276,8 +276,45 @@ def generar_preview(texto: str, titulo: str, autor: str,
                 long_factor = 1.5 if len(tx) > 350 else 1.0
                 paginas_acum += long_factor / PARR_POR_PAG
 
-    doc.build(story)
-    return buf.getvalue()
+    try:
+        doc.build(story)
+        return buf.getvalue()
+    except Exception as e:
+        # Fallback: si falla por algún DropCap, regenerar sustituyendo
+        # los DropCap por párrafos normales con small caps
+        print(f'[preview] doc.build() falló: {e}. Regenerando sin DropCap...')
+        story_safe = []
+        for item in story:
+            # Sustituir DropCap por Paragraph normal con la misma firmeza visual
+            if 'DropCap' in type(item).__name__:
+                try:
+                    raw = re.sub(r'<[^>]+>', '', item.html).strip()
+                    sc_html = (
+                        f'<font name="{HF_B}" size="11">{raw[:40].upper()}</font>'
+                        f'{raw[40:] if len(raw) > 40 else ""}'
+                    ) if len(raw) > 40 else f'<font name="{HF_B}" size="11">{raw.upper()}</font>'
+                    story_safe.append(Paragraph(sc_html, S['body0']))
+                except Exception:
+                    pass
+            else:
+                story_safe.append(item)
+
+        # Reset doc
+        buf = io.BytesIO()
+        doc = BaseDocTemplate(buf, pagesize=A5,
+            leftMargin=0, rightMargin=0, topMargin=0, bottomMargin=0)
+        fr_r = mk_frame(True); fr_v = mk_frame(False)
+        doc.addPageTemplates([
+            PageTemplate(id='recto',  frames=[fr_r], onPage=wm_c),
+            PageTemplate(id='verso',  frames=[fr_v], onPage=wm_c),
+            PageTemplate(id='blanca', frames=[fr_r], onPage=wm_b),
+            PageTemplate(id='portad', frames=[fr_r], onPage=wm_b),
+            PageTemplate(id='portint',frames=[fr_r], onPage=wm_b),
+            PageTemplate(id='cred',   frames=[fr_r], onPage=wm_b),
+            PageTemplate(id='chap',   frames=[fr_r], onPage=wm_c),
+        ])
+        doc.build(story_safe)
+        return buf.getvalue()
 
 
 if __name__ == '__main__':

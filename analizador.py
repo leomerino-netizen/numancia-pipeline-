@@ -92,7 +92,17 @@ def analizar_manuscrito(ms, titulo: str, autor: str, asesora_nombre: str = '') -
 
     try:
         print(f'[analizador] Llamando a Claude API para "{titulo}"...', flush=True)
-        client = Anthropic(api_key=ANTHROPIC_KEY)
+        # Inicializar cliente con manejo robusto del conflicto httpx/proxies
+        try:
+            client = Anthropic(api_key=ANTHROPIC_KEY)
+        except TypeError as te:
+            if 'proxies' in str(te):
+                # Conflicto de versión httpx ↔ anthropic SDK. Forzar httpx_client.
+                print(f'[analizador] Workaround conflicto httpx: {te}', flush=True)
+                import httpx
+                client = Anthropic(api_key=ANTHROPIC_KEY, http_client=httpx.Client())
+            else:
+                raise
 
         prompt_final = PROMPT_ANALISIS.format(
             titulo=titulo, autor=autor or 'Anónimo',

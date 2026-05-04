@@ -127,25 +127,38 @@ class DropCap(Flowable):
         self._3lines    = 3 * ld
 
     def wrap(self, aw, ah):
+        # Si el frame nos da dimensiones inválidas (puede ocurrir tras un
+        # PageBreak especial), devolvemos un alto mínimo para no romper el layout.
+        if aw <= 0 or ah <= 0:
+            self._total = self._3lines
+            self._h_resto = self._3lines
+            self._aw = max(self.ancho, 1)
+            return self._aw, self._3lines
+
         self._aw  = aw
         cap_w     = self.sz_cap * 0.66
         mx        = cap_w + 2 * mm
-        aw2       = self.ancho - mx
+        aw2       = max(self.ancho - mx, 10)  # mínimo de 10pt para evitar 0
 
         # Preparar texto con small caps si procede
         raw  = re.sub(r'<[^>]+>', '', self.html).strip()
-        if not raw:
+        if not raw or len(raw) < 2:
             self._total = self._3lines
+            self._h_resto = self._3lines
             return aw, self._3lines
 
-        resto_html = self._build_resto(raw)
-        from reportlab.platypus import Paragraph as RP
-        from reportlab.lib.styles import ParagraphStyle as RPS
-        st = RPS('dc_w', fontName=BF, fontSize=self.sz_body, leading=self.ld,
-                 textColor=CT, alignment=TA_JUSTIFY, firstLineIndent=0)
-        _, h = RP(resto_html, st).wrap(aw2, 400)
-        self._total = max(self._3lines, h)
-        self._h_resto = h
+        try:
+            resto_html = self._build_resto(raw)
+            from reportlab.platypus import Paragraph as RP
+            from reportlab.lib.styles import ParagraphStyle as RPS
+            st = RPS('dc_w', fontName=BF, fontSize=self.sz_body, leading=self.ld,
+                     textColor=CT, alignment=TA_JUSTIFY, firstLineIndent=0)
+            _, h = RP(resto_html, st).wrap(aw2, 400)
+            self._total = max(self._3lines, h)
+            self._h_resto = h
+        except Exception:
+            self._total = self._3lines
+            self._h_resto = self._3lines
         return aw, self._total
 
     def _build_resto(self, raw: str) -> str:
@@ -161,35 +174,36 @@ class DropCap(Flowable):
         return sc + rest
 
     def draw(self):
-        c   = self.canv
-        raw = re.sub(r'<[^>]+>', '', self.html).strip()
-        if not raw: return
+        try:
+            c   = self.canv
+            raw = re.sub(r'<[^>]+>', '', self.html).strip()
+            if not raw or len(raw) < 2: return
 
-        letra = raw[0]
-        cap_w = self.sz_cap * 0.66
-        mx    = cap_w + 2 * mm
-        aw2   = self.ancho - mx
+            letra = raw[0]
+            cap_w = self.sz_cap * 0.66
+            mx    = cap_w + 2 * mm
+            aw2   = max(self.ancho - mx, 10)
 
-        # Letra capital — base alineada con baseline de 1ª línea
-        # En PRH: la capital tiene la base a la misma altura que la línea 1 de texto
-        baseline = self._total - self.ld  # ≈ altura 1ª línea desde la base del flowable
-        c.saveState()
-        c.setFont(HF_B, self.sz_cap)
-        c.setFillColor(CT)
-        # Ajuste fino: capital ligeramente baja para alinearse con baseline
-        c.drawString(0, baseline - self.sz_cap * 0.12, letra)
-        c.restoreStore = c.restoreState
-        c.restoreState()
+            # Letra capital — base alineada con baseline de 1ª línea
+            baseline = self._total - self.ld
+            c.saveState()
+            c.setFont(HF_B, self.sz_cap)
+            c.setFillColor(CT)
+            c.drawString(0, baseline - self.sz_cap * 0.12, letra)
+            c.restoreState()
 
-        # Texto junto a la capital
-        resto = self._build_resto(raw)
-        from reportlab.platypus import Paragraph as RP
-        from reportlab.lib.styles import ParagraphStyle as RPS
-        st = RPS('dc_d', fontName=BF, fontSize=self.sz_body, leading=self.ld,
-                 textColor=CT, alignment=TA_JUSTIFY, firstLineIndent=0)
-        p   = RP(resto, st)
-        _, h = p.wrap(aw2, 400)
-        p.drawOn(c, mx, self._total - h)
+            # Texto junto a la capital
+            resto = self._build_resto(raw)
+            from reportlab.platypus import Paragraph as RP
+            from reportlab.lib.styles import ParagraphStyle as RPS
+            st = RPS('dc_d', fontName=BF, fontSize=self.sz_body, leading=self.ld,
+                     textColor=CT, alignment=TA_JUSTIFY, firstLineIndent=0)
+            p   = RP(resto, st)
+            _, h = p.wrap(aw2, 400)
+            p.drawOn(c, mx, self._total - h)
+        except Exception as e:
+            # Si falla el draw, no romper toda la generación del PDF
+            print(f'[DropCap] error en draw, ignorando: {e}')
 
 
 # ── Estilos tipográficos PRH ──────────────────────────────────────────────────

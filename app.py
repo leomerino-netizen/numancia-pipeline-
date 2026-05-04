@@ -370,24 +370,32 @@ def generar_preview_pdf():
     """
     _check_auth()
     try:
-        d = request.get_json(force=True)
-        titulo         = d.get('titulo','Sin titulo')
-        autor          = d.get('autor','')
-        dedicatoria    = d.get('dedicatoria','')
-        epigrafe       = d.get('epigrafe','')
-        epigrafe_autor = d.get('epigrafe_autor','')
+        d = request.get_json(force=True) or {}
+        titulo         = (d.get('titulo') or 'Sin titulo').strip()
+        autor          = (d.get('autor') or '').strip()
+        dedicatoria    = (d.get('dedicatoria') or '').strip()
+        epigrafe       = (d.get('epigrafe') or '').strip()
+        epigrafe_autor = (d.get('epigrafe_autor') or '').strip()
+
+        bloques_raw = d.get('bloques')
+        tiene_bloques = isinstance(bloques_raw, list) and len(bloques_raw) > 0
+        tiene_docx    = bool(d.get('docx_base64'))
+        tiene_texto   = bool(d.get('texto'))
+
+        print(f'[preview] titulo={titulo!r} autor={autor!r} '
+              f'bloques={len(bloques_raw) if tiene_bloques else 0} '
+              f'docx={tiene_docx} texto={tiene_texto} '
+              f'dedi={bool(dedicatoria)} epi={bool(epigrafe)}')
 
         # Prioridad 1: bloques editados por la asesora
-        if d.get('bloques'):
+        if tiene_bloques:
             from docx_parser import Bloque
             bloques_lista = []
-            for b in d['bloques']:
+            for b in bloques_raw:
                 if not isinstance(b, dict): continue
-                # Saltarse bloques marcados como excluidos
                 if b.get('incluido') is False: continue
                 tipo  = b.get('tipo','parrafo')
                 texto = (b.get('texto') or '').strip()
-                # Las páginas en blanco se conservan aunque no tengan texto
                 if not texto and tipo != 'pagina_blanca': continue
                 html  = b.get('html') or texto
                 primer_parr = bool(b.get('primer_parr', False))
@@ -400,24 +408,37 @@ def generar_preview_pdf():
                 elif bl.tipo in ('parrafo','dialogo') and siguiente_es_primero:
                     bl.primer_parr = True
                     siguiente_es_primero = False
+
+            print(f'[preview] generando con {len(bloques_lista)} bloques útiles')
+            if not bloques_lista:
+                # Si tras filtrar no queda nada, generar al menos la portada
+                bloques_lista = [Bloque('parrafo', '(sin contenido)', '(sin contenido)')]
             pdf = generar_preview('', titulo, autor, bloques=bloques_lista,
                                   dedicatoria=dedicatoria,
                                   epigrafe=epigrafe, epigrafe_autor=epigrafe_autor)
-        elif d.get('docx_base64'):
+        elif tiene_docx:
+            print(f'[preview] generando desde docx_base64')
             docx_b = base64.b64decode(d['docx_base64'])
             pdf = generar_preview('', titulo, autor, docx_bytes=docx_b,
                                   dedicatoria=dedicatoria,
                                   epigrafe=epigrafe, epigrafe_autor=epigrafe_autor)
         else:
+            print(f'[preview] generando desde texto plano')
             pdf = generar_preview(d.get('texto',''), titulo, autor,
                                   dedicatoria=dedicatoria,
                                   epigrafe=epigrafe, epigrafe_autor=epigrafe_autor)
 
-        titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip()
+        if not pdf:
+            print(f'[preview] ERROR: generar_preview devolvió bytes vacíos')
+            return jsonify({'error': 'No se pudo generar el PDF (bytes vacíos)'}), 500
+
+        print(f'[preview] PDF generado: {len(pdf)//1024} KB')
+        titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip() or 'preview'
         return _pdf_response(pdf, f'Maquetacion previa borrador - {titulo_safe}.pdf')
     except Exception as e:
+        print(f'[preview] EXCEPCIÓN: {type(e).__name__}: {e}')
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'{type(e).__name__}: {str(e)}'}), 500
 
 
 def _bloques_para_preview(bloques, max_bloques=140):

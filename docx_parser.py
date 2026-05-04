@@ -118,10 +118,13 @@ def parsear_docx(src) -> Manuscrito:
 
     ms = Manuscrito()
 
-    # Metadatos del core
+    # Metadatos del core (solo si tienen sentido — no artículos sueltos)
     cp = doc.core_properties
-    if cp.title:  ms.titulo = cp.title
-    if cp.author: ms.autor  = cp.author
+    _ARTICULOS = {'EL','LA','LOS','LAS','UN','UNA','UNOS','UNAS','DE','DEL','EN'}
+    if cp.title and len(cp.title.strip()) >= 3 and cp.title.strip().upper() not in _ARTICULOS:
+        ms.titulo = cp.title
+    if cp.author and len(cp.author.strip()) >= 2:
+        ms.autor  = cp.author
 
     # Recoger todos los párrafos (incluidos vacíos para detectar páginas en blanco)
     parrs = [(i, p) for i, p in enumerate(doc.paragraphs)]
@@ -154,14 +157,19 @@ def parsear_docx(src) -> Manuscrito:
 
     # ── 2. Detectar título y autor ────────────────────────────────────────────
     inicio = 0
+    # Palabras que NUNCA son un título completo (artículos, preposiciones)
+    _NO_TITULO_SOLO = {'EL','LA','LOS','LAS','UN','UNA','UNOS','UNAS','DE','DEL','EN'}
     for idx, (_, p) in enumerate(parrs[:6]):
         t, h = _runs_html(p)
         est  = _estilo(p)
-        # Título: línea corta en mayúsculas (ej: "SARA") o estilo título
-        # Excluir palabras estructurales (PRÓLOGO, CAPÍTULO, INTRODUCCIÓN…)
         t_norm = t.strip().upper()
+        # Excluir palabras estructurales (PRÓLOGO, CAPÍTULO, INTRODUCCIÓN…)
         es_estructural = t_norm in _NO_TITULOS or any(t_norm.startswith(p) for p in _NO_TITULOS)
-        if not es_estructural and (
+        # Excluir artículos/preposiciones sueltos (La, El, De…)
+        es_articulo_solo = t_norm in _NO_TITULO_SOLO
+        # Excluir títulos absurdamente cortos (<3 caracteres reales)
+        es_demasiado_corto = len(t.strip()) < 3
+        if not es_estructural and not es_articulo_solo and not es_demasiado_corto and (
             (t.isupper() and len(t) < 80 and not _es_cap(t, est)) or
             any(x in est for x in ['title','titulo','heading 1'])):
             if not ms.titulo: ms.titulo = t

@@ -159,20 +159,48 @@ def parsear_docx(src) -> Manuscrito:
     inicio = 0
     # Palabras que NUNCA son un título completo (artículos, preposiciones)
     _NO_TITULO_SOLO = {'EL','LA','LOS','LAS','UN','UNA','UNOS','UNAS','DE','DEL','EN'}
-    for idx, (_, p) in enumerate(parrs[:6]):
+    idx = 0
+    while idx < min(len(parrs), 6):
+        p = parrs[idx][1]
         t, h = _runs_html(p)
         est  = _estilo(p)
         t_norm = t.strip().upper()
-        # Excluir palabras estructurales (PRÓLOGO, CAPÍTULO, INTRODUCCIÓN…)
         es_estructural = t_norm in _NO_TITULOS or any(t_norm.startswith(p) for p in _NO_TITULOS)
-        # Excluir artículos/preposiciones sueltos (La, El, De…)
         es_articulo_solo = t_norm in _NO_TITULO_SOLO
-        # Excluir títulos absurdamente cortos (<3 caracteres reales)
         es_demasiado_corto = len(t.strip()) < 3
+
+        # CASO ESPECIAL: si vemos un artículo solo ("LA", "EL"…) en mayúsculas
+        # y el siguiente párrafo también es texto en mayúsculas corto, los unimos
+        # como título compuesto: "LA" + "ATALAYA" → "La Atalaya"
+        if es_articulo_solo and t.isupper() and idx + 1 < len(parrs):
+            t_next, _ = _runs_html(parrs[idx+1][1])
+            t_next_norm = t_next.strip().upper()
+            if (t_next.isupper() and len(t_next) < 80 and len(t_next.strip()) >= 3
+                and t_next_norm not in _NO_TITULOS
+                and not any(t_next_norm.startswith(p) for p in _NO_TITULOS)
+                and not _es_cap(t_next, _estilo(parrs[idx+1][1]))):
+                # Combinar artículo + sustantivo en formato bonito
+                titulo_compuesto = f'{t.strip().capitalize()} {t_next.strip().capitalize()}'
+                if not ms.titulo: ms.titulo = titulo_compuesto
+                inicio = idx + 2
+                # ¿Línea siguiente es el autor?
+                if idx+2 < len(parrs):
+                    t3, _ = _runs_html(parrs[idx+2][1])
+                    est3  = _estilo(parrs[idx+2][1])
+                    if t3 and not _es_cap(t3, est3) and len(t3) < 80 and not t3.isupper():
+                        if not ms.autor: ms.autor = t3
+                        inicio = idx + 3
+                break
+
         if not es_estructural and not es_articulo_solo and not es_demasiado_corto and (
             (t.isupper() and len(t) < 80 and not _es_cap(t, est)) or
             any(x in est for x in ['title','titulo','heading 1'])):
-            if not ms.titulo: ms.titulo = t
+            # Capitalizar bonito en lugar de mantener todo en mayúsculas
+            if t.isupper() and not any(x in est for x in ['title','titulo','heading 1']):
+                titulo_bonito = t.strip().capitalize() if ' ' not in t.strip() else ' '.join(w.capitalize() for w in t.strip().split())
+            else:
+                titulo_bonito = t
+            if not ms.titulo: ms.titulo = titulo_bonito
             inicio = idx + 1
             # Siguiente podría ser autor o subtítulo
             if idx+1 < len(parrs):
@@ -182,6 +210,7 @@ def parsear_docx(src) -> Manuscrito:
                     if not ms.autor: ms.autor = t2
                     inicio = idx + 2
             break
+        idx += 1
 
     parrs = parrs[inicio:]
 

@@ -538,9 +538,12 @@ def procesar_manuscrito():
                 'error': f'Formato no soportado: {nombre_fichero}',
                 'sugerencia': 'Use .docx (Word) o .pdf (PDF con texto)',
             }), 415
-        # Prioridad: override > parser > nombre archivo
-        titulo = titulo_ovr or ms.titulo or titulo_archivo or 'Sin título'
-        autor  = autor_ovr  or ms.autor  or ''
+        # Prioridad: override (Lovable) > parser (docx) > nombre archivo
+        titulo = (titulo_ovr or '').strip() or (ms.titulo or '').strip() or titulo_archivo or 'Sin título'
+        autor  = (autor_ovr  or '').strip() or (ms.autor  or '').strip() or ''
+        print(f'[procesar] titulo_ovr={titulo_ovr!r} ms.titulo={ms.titulo!r} '
+              f'titulo_archivo={titulo_archivo!r} → titulo_final={titulo!r}')
+        print(f'[procesar] autor_ovr={autor_ovr!r} ms.autor={ms.autor!r} → autor_final={autor!r}')
 
         # 2. Estadísticas
         palabras    = sum(len(b.texto.split()) for b in ms.bloques)

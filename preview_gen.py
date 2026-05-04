@@ -188,9 +188,13 @@ def generar_preview(texto: str, titulo: str, autor: str,
         story.append(PageBreak())
 
     en_cap = False
-    # Estimación de páginas A5 acumuladas para limitar el preview a 20 pág.
-    paginas_acum    = 0.0
-    MAX_PAGINAS     = 18     # heurística conservadora — el render puede añadir 1-2 más
+    # PREVIEW = MÁXIMO 15 PÁGINAS TOTAL (prelims + cuerpo)
+    # Las prelims (1-2 blancas + portadilla + créditos + portada + blanca +
+    # reservada dedi + blanca + reservada epi + blanca) consumen ~10 páginas.
+    # Eso deja ~5 páginas útiles del cuerpo para que el autor vea cómo
+    # se ven los primeros capítulos.
+    paginas_acum    = 10.0   # prelims consumidas hasta aquí
+    MAX_PAGINAS     = 15     # tope absoluto del preview
     PARR_POR_PAG    = 5.5
     caps_vistos     = 0
 

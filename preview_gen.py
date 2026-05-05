@@ -29,26 +29,40 @@ def _wm(titulo, autor):
         c.setFont(HF, 7.5)
         c.drawCentredString(0, -8, 'PRUEBA DE MAQUETA — pendiente aprobación autor')
         c.restoreState()
+        # NOTA IMPORTANTE: doc.page de ReportLab parece ir 1 unidad por debajo
+        # del número físico de página. Cap I empieza en física 11 → pn=10.
+        # Por eso usamos umbral 10 y mostramos pn+1 como folio "humano".
         pn = doc.page
-        if pn >= 5:
-            c.setFont(HF, 7.5); c.setFillColor(CG)
-            c.drawCentredString(AW/2, M_BOT-5*mm, str(pn))
+        if pn >= 10:
+            c.saveState()
+            c.setFont(HF, 9)
+            c.setFillColorRGB(0.4, 0.4, 0.4)
+            c.drawCentredString(AW/2, 12*mm, str(pn))
+            c.restoreState()
+    return fn
+
+def _wm_chap(titulo, autor):
+    """Apertura de capítulo: marca de agua + folio (sin cornisa). El folio
+    ya viene de _wm cuando pn >= 11."""
+    def fn(c, doc):
+        _wm(titulo, autor)(c, doc)
     return fn
 
 def _wm_cab(titulo, autor):
+    """Páginas normales del cuerpo: marca + folio + cornisa superior."""
     def fn(c, doc):
         _wm(titulo, autor)(c, doc)
         pn = doc.page
-        if pn >= 5:
+        if pn >= 10:
             recto = (pn % 2 == 1)
             lm = M_INT if recto else M_EXT
             rm = M_EXT  if recto else M_INT
             yh = AH - M_TOP + 4
             c.setFont(HF_I, 7.5); c.setFillColor(CG)
             if recto:
-                c.drawRightString(AW-rm, yh, titulo[:50].upper())
+                c.drawRightString(AW-rm, yh, (titulo or '')[:50].upper())
             elif autor:
-                c.drawString(lm, yh, autor[:50].upper())
+                c.drawString(lm, yh, (autor or '')[:50].upper())
             if recto or autor:
                 c.setStrokeColor(CL); c.setLineWidth(0.4)
                 c.line(lm, yh-2.5, AW-rm, yh-2.5)
@@ -85,19 +99,33 @@ def generar_preview(texto: str, titulo: str, autor: str,
 
     S   = estilos()
     buf = io.BytesIO()
-    wm_b = _wm(titulo_real, autor_real)
-    wm_c = _wm_cab(titulo_real, autor_real)
+    wm_b    = _wm(titulo_real, autor_real)
+    wm_c    = _wm_cab(titulo_real, autor_real)
+    wm_chap = _wm_chap(titulo_real, autor_real)
 
     doc = BaseDocTemplate(buf, pagesize=A5,
         leftMargin=0, rightMargin=0, topMargin=0, bottomMargin=0)
 
     fr_r = mk_frame(True); fr_v = mk_frame(False)
+
+    # Frame especial para apertura de capítulo: más corto por arriba (espacio
+    # de cortesía superior) y más corto por abajo (aire de cortesía inferior),
+    # de forma que el primer párrafo del capítulo nunca llegue al margen.
+    from reportlab.platypus import Frame as RFrame
+    fr_chap = RFrame(
+        M_INT, M_BOT + 25*mm,                    # x, y → 25mm más arriba que normal
+        AW - M_INT - M_EXT,                       # ancho
+        AH - M_TOP - M_BOT - 25*mm - 12*mm,       # alto reducido (12mm cortesía superior + 25mm inferior)
+        leftPadding=0, rightPadding=0,
+        topPadding=0, bottomPadding=0,
+        showBoundary=0)
+
     doc.addPageTemplates([
         PageTemplate(id='blanca',  frames=[fr_r], onPage=wm_b),
         PageTemplate(id='portad',  frames=[fr_r], onPage=wm_b),
         PageTemplate(id='portint', frames=[fr_r], onPage=wm_b),
         PageTemplate(id='cred',    frames=[fr_v], onPage=wm_b),
-        PageTemplate(id='chap',    frames=[fr_r], onPage=wm_b),
+        PageTemplate(id='chap',    frames=[fr_chap], onPage=wm_chap),
         PageTemplate(id='recto',   frames=[fr_r], onPage=wm_c),
         PageTemplate(id='verso',   frames=[fr_v], onPage=wm_c),
     ])
@@ -174,6 +202,7 @@ def generar_preview(texto: str, titulo: str, autor: str,
             placeholder_style))
 
     # P10 blanca (verso de epígrafe) → cuerpo arranca en P11 impar
+    story.append(NextPageTemplate('portad')); story.append(PageBreak())
 
     # Filtrar páginas en blanco al inicio de la lista (no tienen sentido
     # antes del primer contenido). Luego se procesan donde correspondan.
@@ -212,20 +241,21 @@ def generar_preview(texto: str, titulo: str, autor: str,
 
         if t == 'cap_titulo':
             caps_vistos += 1
-            # Apertura de capítulo: nueva página + posible blanca par.
-            # Coste estimado: 1.5 páginas (la blanca para impar + la apertura).
             paginas_acum += 1.5
-            # Convención editorial PRH/Penguin/Planeta: TODOS los capítulos
-            # abren SIEMPRE en página impar (recto/derecha al abrir el libro),
-            # incluido el primero. Si la página actual cae par, se inserta
-            # una blanca automática para forzar el salto al siguiente recto.
-            story.append(NextPageTemplate('blanca'))
-            story.append(PageBreak())
-            story.append(_OddPageBreak())
-            story.append(NextPageTemplate('chap'))
+            # El primer capítulo ya cae en impar gracias a P10 (blanca verso epígrafe).
+            # Para los siguientes, asegurar impar con OddPageBreak.
+            if caps_vistos == 1:
+                story.append(NextPageTemplate('chap'))
+                story.append(PageBreak())
+            else:
+                story.append(NextPageTemplate('blanca'))
+                story.append(_OddPageBreak())
+                story.append(NextPageTemplate('chap'))
+                story.append(PageBreak())
 
-            # Espacio mínimo superior — capítulo arranca cerca del margen
-            story.append(Spacer(1, 8*mm))
+            # El frame especial 'chap' ya da el aire superior (25mm). Aquí solo
+            # ponemos un pequeño aire visual antes del título.
+            story.append(Spacer(1, 4*mm))
 
             m = re.match(r'^(CAP[IÍ]TULO)\s+(.+)$', tx, re.IGNORECASE)
             if m:
@@ -236,11 +266,12 @@ def generar_preview(texto: str, titulo: str, autor: str,
             else:
                 story.append(Paragraph(tx.upper(), S['cap_lbl']))
             story.append(HRFlowable(width='14%', thickness=1, color=CG,
-                                     hAlign='CENTER', spaceBefore=2, spaceAfter=6))
+                                     hAlign='CENTER', spaceBefore=2, spaceAfter=8))
 
-            # Espacio post-título mínimo
-            story.append(Spacer(1, 4*mm))
+            # Aire post-título antes del primer párrafo
+            story.append(Spacer(1, 8*mm))
 
+            # Importante: la siguiente página del capítulo usa 'recto' (con cornisa)
             story.append(NextPageTemplate('recto'))
             en_cap = True
 
@@ -315,7 +346,7 @@ def generar_preview(texto: str, titulo: str, autor: str,
             PageTemplate(id='portad', frames=[fr_r], onPage=wm_b),
             PageTemplate(id='portint',frames=[fr_r], onPage=wm_b),
             PageTemplate(id='cred',   frames=[fr_r], onPage=wm_b),
-            PageTemplate(id='chap',   frames=[fr_r], onPage=wm_c),
+            PageTemplate(id='chap',   frames=[fr_r], onPage=wm_chap),
         ])
         doc.build(story_safe)
         return buf.getvalue()

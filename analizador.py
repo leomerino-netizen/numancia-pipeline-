@@ -18,11 +18,18 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
   "sinopsis_ii": "string — segundo párrafo (4-5 líneas, desarrollo del conflicto y temas de la novela)",
   "sinopsis_iii": "string — tercer párrafo (2-3 líneas, gancho final sin spoilers)",
   "eval": [
-    {{"criterio": "Originalidad",       "estrellas": "X/5", "obs": "DOS o TRES frases evaluando originalidad temática y de tratamiento. Concreto, con argumentos."}},
-    {{"criterio": "Calidad narrativa",  "estrellas": "X/5", "obs": "DOS o TRES frases sobre prosa, ritmo, escenas. Como crítica literaria seria."}},
-    {{"criterio": "Estructura",         "estrellas": "X/5", "obs": "DOS o TRES frases sobre arco, capítulos, tempo, posibles ajustes."}},
-    {{"criterio": "Estilo y voz",       "estrellas": "X/5", "obs": "DOS o TRES frases sobre voz narrativa, registro, identidad del autor."}},
-    {{"criterio": "Viabilidad comercial","estrellas": "X/5", "obs": "DOS o TRES frases sobre encaje en mercado actual español, tendencias."}}
+    {{"criterio": "Originalidad",       "estrellas": "ENTRE_1_Y_5_ENTERO/5", "obs": "DOS o TRES frases evaluando originalidad temática y de tratamiento. Concreto, con argumentos."}},
+    {{"criterio": "Calidad narrativa",  "estrellas": "ENTRE_1_Y_5_ENTERO/5", "obs": "DOS o TRES frases sobre prosa, ritmo, escenas. Como crítica literaria seria."}},
+    {{"criterio": "Estructura",         "estrellas": "ENTRE_1_Y_5_ENTERO/5", "obs": "DOS o TRES frases sobre arco, capítulos, tempo, posibles ajustes."}},
+    {{"criterio": "Estilo y voz",       "estrellas": "ENTRE_1_Y_5_ENTERO/5", "obs": "DOS o TRES frases sobre voz narrativa, registro, identidad del autor."}},
+    {{"criterio": "Viabilidad comercial","estrellas": "ENTRE_1_Y_5_ENTERO/5", "obs": "DOS o TRES frases sobre encaje en mercado actual español, tendencias."}}
+  ],
+  // INSTRUCCIÓN CRÍTICA SOBRE LAS ESTRELLAS:
+  // En cada campo "estrellas" DEBES escribir un número entero entre 1 y 5 seguido de "/5"
+  // Ejemplos VÁLIDOS: "4/5", "3/5", "5/5", "2/5"
+  // Ejemplos INVÁLIDOS (NO usar): "N/5", "X/5", "0/5", "ENTRE_1_Y_5_ENTERO/5"
+  // Tu valoración debe basarse en la calidad real del manuscrito según tu criterio editorial.
+  // Si dudas entre dos puntuaciones, elige la que mejor refleje el nivel comparado con el mercado.
   ],
   "veredicto": "PUBLICABLE | CON MEJORAS | REQUIERE REVISIÓN",
   "veredicto_texto": "string — 3-4 líneas justificando el veredicto en tono profesional editorial. Si es PUBLICABLE o CON MEJORAS, mostrar entusiasmo controlado.",

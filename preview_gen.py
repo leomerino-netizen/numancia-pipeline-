@@ -21,6 +21,27 @@ from maqueta_gen import (
 # ── Fotos circulares de las asesoras ──────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
+
+def _normalizar_asesora_slug(asesora: str) -> str:
+    """
+    Normaliza la entrada (slug o nombre completo) al slug canónico.
+    Lovable a veces manda 'laura' y otras 'Laura Vega Ugarte' — los
+    aceptamos todos.
+    """
+    if not asesora:
+        return 'laura'
+    s = asesora.strip().lower()
+    # Si ya es un slug válido, devolverlo
+    if s in {'laura', 'debora', 'juan', 'nancy'}:
+        return s
+    # Si es nombre completo, detectar por la primera palabra reconocida
+    if 'laura' in s:  return 'laura'
+    if 'débora' in s or 'debora' in s: return 'debora'
+    if 'juan'  in s:  return 'juan'
+    if 'nancy' in s:  return 'nancy'
+    return 'laura'  # fallback
+
+
 def _foto_asesora(slug: str):
     """Devuelve el path al PNG circular de la asesora si existe, o None."""
     candidatos = [
@@ -426,14 +447,16 @@ def generar_preview(texto: str, titulo: str, autor: str,
                     chars_cap_pag = 0
 
     # ─── PÁGINA MOTIVADORA FINAL (CTA comercial) ────────────────────────────
+    # Normalizar el input ANTES de buscar nada
+    _slug_norm = _normalizar_asesora_slug(asesora)
     try:
         from presupuesto_gen import ASESORAS
-        ases = ASESORAS.get(asesora.lower() if asesora else 'laura', ASESORAS['laura'])
+        ases = ASESORAS.get(_slug_norm, ASESORAS['laura'])
         ases_nombre = ases['nombre']
         ases_email  = ases['email']
         ases_url    = ases.get('calendario_url', '')
-        # Detectar género: "asesor editorial" o "asesora editorial"
-        es_hombre = (asesora or '').lower().strip() in {'juan', 'juan muñoz'}
+        # Detectar género según el slug normalizado
+        es_hombre = _slug_norm == 'juan'
         ases_titulo_full = 'asesor editorial' if es_hombre else 'asesora editorial'
         ases_acomp_full  = 'tu asesor editorial' if es_hombre else 'tu asesora editorial'
     except Exception:
@@ -450,11 +473,11 @@ def generar_preview(texto: str, titulo: str, autor: str,
     except Exception:
         logo_path_cta = None
 
-    # Foto circular de la asesora (basada en el slug)
-    asesora_slug = (asesora or 'laura').strip().lower()
+    # Foto circular de la asesora (slug ya normalizado arriba)
+    asesora_slug = _slug_norm
     foto_asesora_path = _foto_asesora(asesora_slug)
-    print(f'[preview] CTA: asesora_slug={asesora_slug!r} '
-          f'foto={foto_asesora_path!r}', flush=True)
+    print(f'[preview] CTA: asesora_input={asesora!r} '
+          f'slug={asesora_slug!r} foto={foto_asesora_path!r}', flush=True)
 
     # Salto a página nueva con template 'portad' (sin folio ni cornisa)
     story.append(NextPageTemplate('portad'))

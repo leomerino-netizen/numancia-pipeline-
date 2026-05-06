@@ -18,6 +18,46 @@ from maqueta_gen import (
     _pagina_creditos
 )
 
+
+# ── Mapper UI Lovable → campos de _pagina_creditos ───────────────────────────
+def _mapear_papel_acabado(tipo_papel: str, acabado: str):
+    """
+    Convierte los textos del editable de Lovable
+        - tipo_papel: "Papel novela ahuesado de 80 g/m²" / "Papel offset crema 90..." / etc.
+        - acabado:    "Tapa blanda con solapas, encuadernación fresada" / etc.
+    en los 3 campos que espera _pagina_creditos:
+        papel, cubierta_tipo, laminado
+    """
+    # Interior (papel del bloque) → tal cual lo seleccionó el asesor
+    papel = (tipo_papel or 'Papel offset 90 g/m²').strip()
+
+    # Cubierta + laminado → derivar del tipo de acabado
+    a = (acabado or '').strip().lower()
+
+    if 'tapa dura' in a:
+        cubierta_tipo = 'Cartoné con sobrecubierta'
+        laminado      = 'Laminado mate · Encuadernación cartoné'
+    elif 'rústica cosida' in a or 'rustica cosida' in a or 'cosida' in a:
+        cubierta_tipo = 'Cartulina 300 g/m²'
+        laminado      = 'Laminado mate · Encuadernación rústica cosida'
+    elif 'sin solapas' in a:
+        cubierta_tipo = 'Cartulina 300 g/m²'
+        laminado      = 'Laminado brillante · Encuadernación fresada'
+    elif 'con solapas' in a:
+        cubierta_tipo = 'Cartulina 300 g/m² con solapas'
+        laminado      = 'Laminado brillante · Encuadernación fresada'
+    elif a:
+        # Personalizado: el asesor escribió texto libre → usarlo en cubierta
+        cubierta_tipo = (acabado or 'Cartulina 300 g/m²').strip()
+        laminado      = 'Encuadernación fresada'
+    else:
+        # Sin acabado especificado → defaults
+        cubierta_tipo = 'Cartulina 300 g/m²'
+        laminado      = 'Laminado brillante · Encuadernación fresada'
+
+    return papel, cubierta_tipo, laminado
+
+
 def _wm(titulo, autor):
     def fn(c, doc):
         c.saveState()
@@ -100,6 +140,14 @@ def generar_preview(texto: str, titulo: str, autor: str,
     if not epigrafe and getattr(ms, 'epigrafe', None):
         epigrafe = ' '.join(ms.epigrafe) if isinstance(ms.epigrafe, list) else str(ms.epigrafe)
 
+    # Mapear UI Lovable → campos página de créditos
+    papel_creditos, cubierta_tipo_creditos, laminado_creditos = _mapear_papel_acabado(
+        tipo_papel, acabado
+    )
+    print(f'[preview] créditos: papel={papel_creditos!r} '
+          f'cubierta={cubierta_tipo_creditos!r} '
+          f'laminado={laminado_creditos!r}', flush=True)
+
     S   = estilos()
     buf = io.BytesIO()
     wm_b    = _wm(titulo_real, autor_real)
@@ -143,9 +191,12 @@ def generar_preview(texto: str, titulo: str, autor: str,
     story.append(NextPageTemplate('portad'))
     story.append(Spacer(1, 75*mm))
     story.append(Paragraph(titulo_real, S['port_t']))
-    # P4 créditos completos (mismo bloque que maqueta)
+    # P4 créditos completos (mismo bloque que maqueta) — con papel/acabado del asesor
     story.append(NextPageTemplate('cred')); story.append(PageBreak())
-    _pagina_creditos(story, titulo_real, autor_real, '2026', S)
+    _pagina_creditos(story, titulo_real, autor_real, '2026', S,
+                     papel=papel_creditos,
+                     cubierta_tipo=cubierta_tipo_creditos,
+                     laminado=laminado_creditos)
     # P5 portada interior (autor + título + sello editorial)
     story.append(NextPageTemplate('portint')); story.append(PageBreak())
     if autor_real:

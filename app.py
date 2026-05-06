@@ -602,6 +602,43 @@ def procesar_manuscrito():
         fecha_str = f"{hoy.day} de {meses[hoy.month-1]} de {hoy.year}"
 
         # 5. Construir dict completo del informe
+        # DEBUG: ver qué nos devuelve Claude en eval (para diagnosticar estrellas)
+        eval_real = analisis.get('eval', [])
+        print(f'[procesar] analisis.eval ({len(eval_real)} items): {eval_real}', flush=True)
+
+        # FALLBACK: si Claude no asignó valores válidos a estrellas (devuelve "N/5",
+        # "0/5", placeholder), aplicar valores realistas por defecto según veredicto
+        veredicto_real = analisis.get('veredicto', 'CON MEJORAS').upper()
+        if 'PUBLICABLE' in veredicto_real and 'CON' not in veredicto_real:
+            puntos_default = ['4/5', '4/5', '4/5', '4/5', '4/5']
+        elif 'CON MEJORAS' in veredicto_real:
+            puntos_default = ['3/5', '3/5', '3/5', '4/5', '3/5']
+        else:  # REQUIERE REVISIÓN u otros
+            puntos_default = ['2/5', '2/5', '2/5', '3/5', '2/5']
+
+        eval_corregido = []
+        for i, item in enumerate(eval_real):
+            if not isinstance(item, dict):
+                continue
+            estrellas_raw = str(item.get('estrellas', '')).strip()
+            # Si las estrellas no son válidas (no contienen un dígito 1-5), usar default
+            import re as _re_est
+            m = _re_est.search(r'[1-5]', estrellas_raw)
+            if not m or estrellas_raw in ('0/5', 'N/5', 'X/5', 'ENTRE_1_Y_5_ENTERO/5'):
+                estrellas_final = puntos_default[i] if i < len(puntos_default) else '3/5'
+                print(f'[procesar] estrella inválida en item {i} ({estrellas_raw!r}) → fallback {estrellas_final!r}')
+            else:
+                # Normalizar: si Claude devolvió "4" sin "/5", añadir
+                if '/' not in estrellas_raw:
+                    estrellas_final = f'{m.group()}/5'
+                else:
+                    estrellas_final = estrellas_raw
+            eval_corregido.append({
+                'criterio': item.get('criterio', ''),
+                'estrellas': estrellas_final,
+                'obs': item.get('obs', ''),
+            })
+
         datos_informe = {
             'titulo':        titulo,
             'autor':         autor,
@@ -613,7 +650,7 @@ def procesar_manuscrito():
             'sinopsis_i':    analisis.get('sinopsis_i', ''),
             'sinopsis_ii':   analisis.get('sinopsis_ii', ''),
             'sinopsis_iii':  analisis.get('sinopsis_iii', ''),
-            'eval':          analisis.get('eval', []),
+            'eval':          eval_corregido,
             'veredicto':       analisis.get('veredicto', 'CON MEJORAS'),
             'veredicto_texto': analisis.get('veredicto_texto', ''),
             'lector_primario':   analisis.get('lector_primario', ''),

@@ -443,6 +443,22 @@ def generar_preview_pdf():
 
         print(f'[preview] PDF generado: {len(pdf)//1024} KB')
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip() or 'preview'
+
+        # Si el cliente envió "format=base64" o Accept: application/json,
+        # devolver JSON con el PDF codificado en base64. Lovable lo necesita así.
+        formato = (d.get('format') or '').lower()
+        accept  = (request.headers.get('Accept') or '').lower()
+        quiere_json = formato == 'base64' or 'application/json' in accept
+
+        if quiere_json:
+            print(f'[preview] devolviendo JSON con base64')
+            return jsonify({
+                'ok': True,
+                'preview_pdf': base64.b64encode(pdf).decode('ascii'),
+                'filename': f'Maquetacion previa borrador - {titulo_safe}.pdf',
+                'size_kb': len(pdf) // 1024,
+            })
+
         return _pdf_response(pdf, f'Maquetacion previa borrador - {titulo_safe}.pdf')
     except Exception as e:
         print(f'[preview] EXCEPCIÓN: {type(e).__name__}: {e}')

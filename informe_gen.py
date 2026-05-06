@@ -49,27 +49,71 @@ def S(name, font='Helvetica', size=9, leading=12, color=NEGRO, align=TA_LEFT, **
                           textColor=color, alignment=align, **kw)
 
 
-# ── Estrellas elegantes (doradas + huecas grises) ─────────────────────────────
+# ── Registro de DejaVuSans para estrellas ─────────────────────────────────────
+# DejaVuSans incluye U+2605 (★) y se embebe en el repo (carpeta fonts/).
+# Esto garantiza que las estrellas rendericen siempre, sin depender del SO.
+_STAR_FONT = None
+def _registrar_fuente_estrellas():
+    global _STAR_FONT
+    if _STAR_FONT is not None:
+        return _STAR_FONT
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        import os
+        fonts_dir = os.path.join(os.path.dirname(__file__), 'fonts')
+        ttf_path = os.path.join(fonts_dir, 'DejaVuSans.ttf')
+        if os.path.exists(ttf_path):
+            try:
+                pdfmetrics.registerFont(TTFont('DejaVuStars', ttf_path))
+                _STAR_FONT = 'DejaVuStars'
+                return _STAR_FONT
+            except Exception as e:
+                print(f'[informe] Error registrando DejaVuSans: {e}')
+        # Fallback al sistema
+        for path in ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+                     '/usr/share/fonts/dejavu/DejaVuSans.ttf']:
+            if os.path.exists(path):
+                pdfmetrics.registerFont(TTFont('DejaVuStars', path))
+                _STAR_FONT = 'DejaVuStars'
+                return _STAR_FONT
+    except Exception as e:
+        print(f'[informe] No se pudo registrar fuente de estrellas: {e}')
+    _STAR_FONT = 'Helvetica'   # último fallback (estrella saldrá como cuadrado)
+    return _STAR_FONT
+
+
+# ── Estrellas elegantes (doradas + grises) ────────────────────────────────────
 def _estrellas(pts_str):
     s = str(pts_str).strip()
-    if '★' in s or '☆' in s:
+    n = 0
+    # 1) Si contiene caracteres de estrella, cuéntalos
+    if '★' in s:
         n = s.count('★')
+    elif '☆' in s and '★' not in s:
+        # Solo estrellas vacías → 0
+        n = 0
     else:
-        try:
-            n = int(s.replace(' ','').split('/')[0])
-        except:
-            n = 0
+        # 2) Buscar el primer dígito 0-5 en la cadena
+        import re as _re
+        m = _re.search(r'[0-5]', s)
+        if m:
+            try:
+                n = int(m.group())
+            except:
+                n = 0
+        else:
+            # 3) Detectar palabras: "cinco" "cuatro" "tres" "dos" "uno"
+            palabras = {'cinco':5, 'cuatro':4, 'tres':3, 'dos':2, 'uno':1, 'una':1, 'cero':0}
+            for k, v in palabras.items():
+                if k in s.lower():
+                    n = v; break
     n = max(0, min(5, n))
-    llenas = '&#9733;' * n
-    vacias = '&#9734;' * (5 - n)
-    # Usar la misma estrella ★ rellena pero en color gris claro para las "vacías"
-    # (la estrella hueca ☆ no renderiza en todas las fuentes y sale como cuadrado)
-    estrella_oro  = '\u2605'   # ★
-    estrellas_oro   = estrella_oro * n
-    estrellas_gris  = estrella_oro * (5 - n)
+    fuente = _registrar_fuente_estrellas()
+    print(f'[informe] _estrellas("{pts_str}") → n={n} (fuente={fuente})', flush=True)
     return (
-        f'<font name="Helvetica" size="13" color="#A88838">{estrellas_oro}</font>'
-        f'<font name="Helvetica" size="13" color="#D4CEC2">{estrellas_gris}</font>'
+        f'<font name="{fuente}" size="14" color="#A88838">{"\u2605" * n}</font>'
+        f'<font name="{fuente}" size="14" color="#D4CEC2">{"\u2605" * (5 - n)}</font>'
         f'<br/><font name="Helvetica-Oblique" size="6.5" color="#888888">{n} de 5</font>'
     )
 

@@ -110,7 +110,7 @@ def _estrellas(pts_str):
                     n = v; break
     n = max(0, min(5, n))
     fuente = _registrar_fuente_estrellas()
-    print(f'[informe] _estrellas("{pts_str}") → n={n} (fuente={fuente})', flush=True)
+    print(f'[informe] _estrellas({pts_str!r}) → n={n} (fuente={fuente}) [tipo={type(pts_str).__name__}]', flush=True)
     return (
         f'<font name="{fuente}" size="14" color="#A88838">{"\u2605" * n}</font>'
         f'<font name="{fuente}" size="14" color="#D4CEC2">{"\u2605" * (5 - n)}</font>'

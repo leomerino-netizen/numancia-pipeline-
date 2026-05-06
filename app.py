@@ -37,6 +37,55 @@ def _pdf_response(pdf_bytes: bytes, filename: str):
     )
 
 
+# ── Fallback de estrellas (compartido entre /procesar-manuscrito y /generar-informe-pdf)
+def _aplicar_fallback_estrellas(eval_list, veredicto):
+    """
+    Si Claude (o Lovable) devolvió 'N/5', '0/5', placeholder o cadena vacía,
+    aplica valores realistas según el veredicto. Devuelve la lista corregida.
+    """
+    import re as _re_est
+
+    veredicto_real = (veredicto or 'CON MEJORAS').upper()
+    if 'PUBLICABLE' in veredicto_real and 'CON' not in veredicto_real:
+        puntos_default = ['4/5', '4/5', '4/5', '4/5', '4/5']
+    elif 'CON MEJORAS' in veredicto_real or 'MEJORAS' in veredicto_real:
+        puntos_default = ['3/5', '3/5', '3/5', '4/5', '3/5']
+    else:  # REQUIERE REVISIÓN u otros
+        puntos_default = ['2/5', '2/5', '2/5', '3/5', '2/5']
+
+    eval_corregido = []
+    fallback_activado = False
+    for i, item in enumerate(eval_list or []):
+        if not isinstance(item, dict):
+            continue
+        estrellas_raw = str(item.get('estrellas', '')).strip()
+        m = _re_est.search(r'[1-5]', estrellas_raw)
+        es_invalida = (
+            not m
+            or estrellas_raw in ('0/5', 'N/5', 'X/5', 'ENTRE_1_Y_5_ENTERO/5', '')
+            or estrellas_raw.upper().startswith('N')
+        )
+        if es_invalida:
+            estrellas_final = puntos_default[i] if i < len(puntos_default) else '3/5'
+            fallback_activado = True
+            print(f'[fallback] item {i} ({item.get("criterio","?")!r}): '
+                  f'{estrellas_raw!r} → {estrellas_final!r}', flush=True)
+        else:
+            # Normalizar: si Claude devolvió "4" sin "/5", añadir
+            if '/' not in estrellas_raw:
+                estrellas_final = f'{m.group()}/5'
+            else:
+                estrellas_final = estrellas_raw
+        eval_corregido.append({
+            'criterio': item.get('criterio', ''),
+            'estrellas': estrellas_final,
+            'obs': item.get('obs', ''),
+        })
+    if fallback_activado:
+        print(f'[fallback] ⚠️ Activado para veredicto={veredicto_real!r}', flush=True)
+    return eval_corregido
+
+
 # ── Health check ──────────────────────────────────────────────────────────────
 @app.route('/', methods=['GET'])
 def health():
@@ -309,13 +358,13 @@ def transformar():
         return jsonify({'error': str(e)}), 500
 
 
-
+# ── POST /generar-informe-pdf ─────────────────────────────────────────────────
 @app.route('/generar-informe-pdf', methods=['POST'])
 def generar_informe_pdf():
     """
     Recibe el JSON de datos del informe (potencialmente editado por el asesor)
     y devuelve solo el PDF del informe de lectura y valoración.
-    
+
     Body JSON con todos los campos del informe:
       titulo, autor, genero, ambientacion, extension,
       fecha, evaluado_por, sinopsis_i, sinopsis_ii, sinopsis_iii,
@@ -325,7 +374,16 @@ def generar_informe_pdf():
     """
     _check_auth()
     try:
-        d = request.get_json(force=True)
+        d = request.get_json(force=True) or {}
+
+        # ── DEBUG: log de lo que llega de Lovable ──────────────────────
+        print(f'[generar_informe_pdf] payload keys: {list(d.keys())}', flush=True)
+        eval_recibido = d.get('eval') or d.get('evaluacion') or []
+        print(f'[generar_informe_pdf] eval recibido ({len(eval_recibido)} items): '
+              f'{[(i.get("criterio"), i.get("estrellas")) for i in eval_recibido if isinstance(i, dict)]}',
+              flush=True)
+        print(f'[generar_informe_pdf] veredicto: {d.get("veredicto")!r}', flush=True)
+
         # Si viene anidado como en /procesar-manuscrito, normalizar
         if 'sinopsis' in d and isinstance(d['sinopsis'], dict):
             d['sinopsis_i']  = d['sinopsis'].get('i','')
@@ -340,6 +398,12 @@ def generar_informe_pdf():
             d['eval'] = d['evaluacion']
         if 'asesora_nombre' in d and not d.get('evaluado_por'):
             d['evaluado_por'] = d['asesora_nombre']
+
+        # ── FALLBACK: corrige estrellas placeholder antes de renderizar ──
+        d['eval'] = _aplicar_fallback_estrellas(
+            d.get('eval', []),
+            d.get('veredicto', 'CON MEJORAS')
+        )
 
         # Reconstruir ortotipo si viene en formato simplificado
         orto = d.get('ortotipo')
@@ -359,6 +423,7 @@ def generar_informe_pdf():
         return jsonify({'error': str(e)}), 500
 
 
+# ── POST /generar-preview-pdf ─────────────────────────────────────────────────
 @app.route('/generar-preview-pdf', methods=['POST'])
 def generar_preview_pdf():
     """
@@ -484,11 +549,6 @@ def _bloques_para_preview(bloques, max_bloques=140):
     return salida
 
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, debug=False)
-
-
 # ── POST /procesar-manuscrito ─────────────────────────────────────────────────
 @app.route('/procesar-manuscrito', methods=['POST'])
 def procesar_manuscrito():
@@ -606,38 +666,11 @@ def procesar_manuscrito():
         eval_real = analisis.get('eval', [])
         print(f'[procesar] analisis.eval ({len(eval_real)} items): {eval_real}', flush=True)
 
-        # FALLBACK: si Claude no asignó valores válidos a estrellas (devuelve "N/5",
-        # "0/5", placeholder), aplicar valores realistas por defecto según veredicto
-        veredicto_real = analisis.get('veredicto', 'CON MEJORAS').upper()
-        if 'PUBLICABLE' in veredicto_real and 'CON' not in veredicto_real:
-            puntos_default = ['4/5', '4/5', '4/5', '4/5', '4/5']
-        elif 'CON MEJORAS' in veredicto_real:
-            puntos_default = ['3/5', '3/5', '3/5', '4/5', '3/5']
-        else:  # REQUIERE REVISIÓN u otros
-            puntos_default = ['2/5', '2/5', '2/5', '3/5', '2/5']
-
-        eval_corregido = []
-        for i, item in enumerate(eval_real):
-            if not isinstance(item, dict):
-                continue
-            estrellas_raw = str(item.get('estrellas', '')).strip()
-            # Si las estrellas no son válidas (no contienen un dígito 1-5), usar default
-            import re as _re_est
-            m = _re_est.search(r'[1-5]', estrellas_raw)
-            if not m or estrellas_raw in ('0/5', 'N/5', 'X/5', 'ENTRE_1_Y_5_ENTERO/5'):
-                estrellas_final = puntos_default[i] if i < len(puntos_default) else '3/5'
-                print(f'[procesar] estrella inválida en item {i} ({estrellas_raw!r}) → fallback {estrellas_final!r}')
-            else:
-                # Normalizar: si Claude devolvió "4" sin "/5", añadir
-                if '/' not in estrellas_raw:
-                    estrellas_final = f'{m.group()}/5'
-                else:
-                    estrellas_final = estrellas_raw
-            eval_corregido.append({
-                'criterio': item.get('criterio', ''),
-                'estrellas': estrellas_final,
-                'obs': item.get('obs', ''),
-            })
+        # FALLBACK: corregir estrellas placeholder con valores realistas según veredicto
+        eval_corregido = _aplicar_fallback_estrellas(
+            eval_real,
+            analisis.get('veredicto', 'CON MEJORAS')
+        )
 
         datos_informe = {
             'titulo':        titulo,
@@ -727,3 +760,9 @@ def procesar_manuscrito():
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+
+# ── Arranque ──────────────────────────────────────────────────────────────────
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=False)

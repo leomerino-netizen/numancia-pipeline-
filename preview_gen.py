@@ -1,7 +1,7 @@
 """
 preview_gen.py — Preview 10 páginas con marca de agua, mismo motor que maqueta_gen.
 """
-import io, re
+import io, re, os
 from reportlab.lib.pagesizes import A5
 from reportlab.lib.units import mm
 from reportlab.lib import colors
@@ -17,6 +17,19 @@ from maqueta_gen import (
     AW, AH, M_INT, M_EXT, M_TOP, M_BOT, _OddPageBreak,
     _pagina_creditos
 )
+
+# ── Fotos circulares de las asesoras ──────────────────────────────────────────
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+def _foto_asesora(slug: str):
+    """Devuelve el path al PNG circular de la asesora si existe, o None."""
+    candidatos = [
+        os.path.join(_HERE, 'fotos', f'{slug}-circ.png'),
+        os.path.join(_HERE, 'fotos', f'{slug}.png'),
+        os.path.join(_HERE, 'fotos', f'{slug}.jpg'),
+        os.path.join(_HERE, f'{slug}-circ.png'),
+    ]
+    return next((p for p in candidatos if os.path.isfile(p)), None)
 
 
 # ── Mapper UI Lovable → campos de _pagina_creditos ───────────────────────────
@@ -437,56 +450,63 @@ def generar_preview(texto: str, titulo: str, autor: str,
     except Exception:
         logo_path_cta = None
 
+    # Foto circular de la asesora (basada en el slug)
+    asesora_slug = (asesora or 'laura').strip().lower()
+    foto_asesora_path = _foto_asesora(asesora_slug)
+    print(f'[preview] CTA: asesora_slug={asesora_slug!r} '
+          f'foto={foto_asesora_path!r}', flush=True)
+
     # Salto a página nueva con template 'portad' (sin folio ni cornisa)
     story.append(NextPageTemplate('portad'))
     story.append(PageBreak())
 
-    # Estilos de la página motivadora
+    # Estilos de la página motivadora — compactos para entrar todo en 1 pág
     cta_titulo_style = ParagraphStyle(
-        'cta_titulo', fontName=HF_B, fontSize=18, leading=24,
+        'cta_titulo', fontName=HF_B, fontSize=16, leading=21,
         textColor=CT, alignment=TA_CENTER,
         leftIndent=8*mm, rightIndent=8*mm)
     cta_subtitulo_style = ParagraphStyle(
-        'cta_sub', fontName=HF_I, fontSize=11, leading=16,
+        'cta_sub', fontName=HF_I, fontSize=10, leading=14,
         textColor=CG, alignment=TA_CENTER,
         leftIndent=12*mm, rightIndent=12*mm,
-        spaceBefore=4*mm)
-    cta_body_style = ParagraphStyle(
-        'cta_body', fontName=BF, fontSize=10.5, leading=15,
-        textColor=CT, alignment=TA_LEFT,
-        leftIndent=14*mm, rightIndent=14*mm,
         spaceBefore=2*mm)
+    cta_body_style = ParagraphStyle(
+        'cta_body', fontName=BF, fontSize=9.5, leading=13,
+        textColor=CT, alignment=TA_LEFT,
+        leftIndent=12*mm, rightIndent=12*mm,
+        spaceBefore=1*mm)
     cta_firma_style = ParagraphStyle(
-        'cta_firma', fontName=HF_I, fontSize=10, leading=14,
+        'cta_firma', fontName=HF_I, fontSize=9.5, leading=13,
         textColor=CT, alignment=TA_CENTER,
-        spaceBefore=3*mm)
+        spaceBefore=1*mm)
 
     # Saludo personalizado al autor
     autor_pila = (autor_real.split()[0] if autor_real else '').strip()
     saludo = f'Estimado/a {autor_pila}' if autor_pila else 'Estimado autor'
 
-    story.append(Spacer(1, 14*mm))
+    story.append(Spacer(1, 6*mm))
+    # ── TÍTULO MARKETINERO (frase nueva: "De manuscrito a libro publicado") ──
     story.append(Paragraph(
-        'Así de bonito quedará<br/>tu libro publicado',
+        'De manuscrito<br/>a libro publicado',
         cta_titulo_style))
     story.append(Paragraph(
-        'con Editorial Numancia',
+        'Editorial Numancia te acompaña',
         cta_subtitulo_style))
-    story.append(Spacer(1, 5*mm))
-    story.append(HRFlowable(width='25%', thickness=1.2,
-                             color=colors.HexColor('#A88838'),
-                             hAlign='CENTER', spaceBefore=2, spaceAfter=8))
     story.append(Spacer(1, 3*mm))
+    story.append(HRFlowable(width='22%', thickness=1.0,
+                             color=colors.HexColor('#A88838'),
+                             hAlign='CENTER', spaceBefore=1, spaceAfter=4))
+    story.append(Spacer(1, 1*mm))
 
-    # Saludo + lead — "PODRÁ incluir" (parametrizable)
+    # Saludo + lead — más conciso
     story.append(Paragraph(
         f'<b>{saludo}</b>, esta muestra es solo una pequeña parte '
-        f'de cómo lucirá tu obra publicada con nosotros. La versión final '
-        f'<b>podrá incluir</b>:',
+        f'de cómo lucirá tu obra publicada con nosotros. La versión '
+        f'final <b>podrá incluir</b>:',
         cta_body_style))
-    story.append(Spacer(1, 3*mm))
+    story.append(Spacer(1, 1.5*mm))
 
-    # Beneficios — incluye tipo de papel y acabado editables por la asesora
+    # Beneficios — compactos, leading reducido
     beneficios_html = (
         '<font color="#A88838">▪</font> &nbsp;Maquetación profesional completa de tu manuscrito<br/>'
         '<font color="#A88838">▪</font> &nbsp;Corrección ortotipográfica según norma RAE<br/>'
@@ -495,32 +515,53 @@ def generar_preview(texto: str, titulo: str, autor: str,
         f'<font color="#A88838">▪</font> &nbsp;{acabado}<br/>'
         '<font color="#A88838">▪</font> &nbsp;ISBN, depósito legal y registro<br/>'
         '<font color="#A88838">▪</font> &nbsp;Distribución y catálogo editorial<br/>'
-        f'<font color="#A88838">▪</font> &nbsp;Acompañamiento personal de <b>{ases_nombre}</b>, {ases_acomp_full}'
+        f'<font color="#A88838">▪</font> &nbsp;Acompañamiento personal de <b>{ases_nombre}</b>'
     )
-    story.append(Paragraph(beneficios_html, cta_body_style))
-    story.append(Spacer(1, 5*mm))
-    story.append(HRFlowable(width='15%', thickness=0.8,
-                             color=colors.HexColor('#D4CEC2'),
-                             hAlign='CENTER', spaceBefore=2, spaceAfter=6))
-    story.append(Spacer(1, 2*mm))
+    cta_lista_style = ParagraphStyle(
+        'cta_lista', fontName=BF, fontSize=9, leading=12.5,
+        textColor=CT, alignment=TA_LEFT,
+        leftIndent=14*mm, rightIndent=12*mm)
+    story.append(Paragraph(beneficios_html, cta_lista_style))
+    story.append(Spacer(1, 3*mm))
 
-    # CTA: caja destacada con enlace embebido a Zoho Bookings
+    # CTA: caja destacada con enlace embebido a Zoho Bookings — compacta
     cta_caja_style = ParagraphStyle(
-        'cta_caja', fontName=HF_B, fontSize=11, leading=15,
+        'cta_caja', fontName=HF_B, fontSize=10, leading=13,
         textColor=colors.HexColor('#A88838'), alignment=TA_CENTER,
         leftIndent=14*mm, rightIndent=14*mm,
-        spaceBefore=2*mm, spaceAfter=2*mm,
-        borderColor=colors.HexColor('#A88838'), borderWidth=0.8,
-        borderPadding=10, borderRadius=4,
+        spaceBefore=1*mm, spaceAfter=1*mm,
+        borderColor=colors.HexColor('#A88838'), borderWidth=0.7,
+        borderPadding=8, borderRadius=4,
         backColor=colors.HexColor('#FAF6EC'))
     cta_link_text = (
         f'<link href="{ases_url}" color="#A88838">'
         f'<b>Programa una llamada con {ases_acomp_full}</b><br/>'
-        f'<font size="9">para comentar tu publicación y distribución</font>'
+        f'<font size="8.5">para comentar tu publicación y distribución</font>'
         f'</link>'
     )
     story.append(Paragraph(cta_link_text, cta_caja_style))
-    story.append(Spacer(1, 4*mm))
+    story.append(Spacer(1, 3*mm))
+
+    # ── FOTO CIRCULAR DE LA ASESORA + DATOS (compactos) ────────────────────
+    if foto_asesora_path:
+        try:
+            from reportlab.platypus import Image as RLImage, Table, TableStyle
+            foto_size = 18*mm   # antes 22mm
+            foto = RLImage(foto_asesora_path,
+                           width=foto_size, height=foto_size,
+                           kind='proportional')
+            t_foto = Table([[foto]], colWidths=[CUERPO_W])
+            t_foto.setStyle(TableStyle([
+                ('ALIGN',        (0,0),(-1,-1), 'CENTER'),
+                ('LEFTPADDING',  (0,0),(-1,-1), 0),
+                ('RIGHTPADDING', (0,0),(-1,-1), 0),
+                ('TOPPADDING',   (0,0),(-1,-1), 0),
+                ('BOTTOMPADDING',(0,0),(-1,-1), 0),
+            ]))
+            story.append(t_foto)
+            story.append(Spacer(1, 1*mm))
+        except Exception as e:
+            print(f'[preview] error foto asesora: {e}')
 
     # Datos de contacto de la asesora/asesor
     story.append(Paragraph(
@@ -528,20 +569,34 @@ def generar_preview(texto: str, titulo: str, autor: str,
         cta_firma_style))
     story.append(Paragraph(
         f'{ases_email}',
-        ParagraphStyle('email', fontName=HF, fontSize=9, leading=12,
+        ParagraphStyle('email', fontName=HF, fontSize=8.5, leading=11,
                        textColor=CT, alignment=TA_CENTER)))
-    story.append(Spacer(1, 6*mm))
+    story.append(Spacer(1, 4*mm))
 
-    # Logo de Editorial Numancia centrado al pie
+    # ── LOGO DE EDITORIAL NUMANCIA AL PIE (compacto) ───────────────────────
     if logo_path_cta:
         try:
-            from reportlab.platypus import Image as RLImage
-            logo_img = RLImage(logo_path_cta, width=20*mm, height=20*mm,
-                                kind='proportional')
-            logo_img.hAlign = 'CENTER'
-            story.append(logo_img)
-        except Exception:
-            pass
+            from reportlab.platypus import Image as RLImage, Table, TableStyle
+            try:
+                from PIL import Image as PILImage
+                _w, _h = PILImage.open(logo_path_cta).size
+                ratio_logo = _h / _w
+            except Exception:
+                ratio_logo = 337 / 1621  # fallback al ratio que conocemos
+            logo_w_cta = 24*mm   # antes 28mm
+            logo_h_cta = logo_w_cta * ratio_logo
+            logo_img = RLImage(logo_path_cta, width=logo_w_cta, height=logo_h_cta)
+            t_logo = Table([[logo_img]], colWidths=[CUERPO_W])
+            t_logo.setStyle(TableStyle([
+                ('ALIGN',        (0,0),(-1,-1), 'CENTER'),
+                ('LEFTPADDING',  (0,0),(-1,-1), 0),
+                ('RIGHTPADDING', (0,0),(-1,-1), 0),
+                ('TOPPADDING',   (0,0),(-1,-1), 0),
+                ('BOTTOMPADDING',(0,0),(-1,-1), 0),
+            ]))
+            story.append(t_logo)
+        except Exception as e:
+            print(f'[preview] error logo Numancia CTA: {e}')
 
     try:
         doc.build(story)

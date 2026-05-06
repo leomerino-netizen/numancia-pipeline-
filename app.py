@@ -376,6 +376,9 @@ def generar_preview_pdf():
         dedicatoria    = (d.get('dedicatoria') or '').strip()
         epigrafe       = (d.get('epigrafe') or '').strip()
         epigrafe_autor = (d.get('epigrafe_autor') or '').strip()
+        asesora        = (d.get('asesora') or 'laura').strip().lower()
+        tipo_papel     = (d.get('tipo_papel') or 'Papel novela ahuesado de 80 g/m²').strip()
+        acabado        = (d.get('acabado') or 'Tapa blanda con solapas, encuadernación fresada').strip()
 
         bloques_raw = d.get('bloques')
         tiene_bloques = isinstance(bloques_raw, list) and len(bloques_raw) > 0
@@ -415,18 +418,24 @@ def generar_preview_pdf():
                 bloques_lista = [Bloque('parrafo', '(sin contenido)', '(sin contenido)')]
             pdf = generar_preview('', titulo, autor, bloques=bloques_lista,
                                   dedicatoria=dedicatoria,
-                                  epigrafe=epigrafe, epigrafe_autor=epigrafe_autor)
+                                  epigrafe=epigrafe, epigrafe_autor=epigrafe_autor,
+                                  asesora=asesora,
+                                  tipo_papel=tipo_papel, acabado=acabado)
         elif tiene_docx:
             print(f'[preview] generando desde docx_base64')
             docx_b = base64.b64decode(d['docx_base64'])
             pdf = generar_preview('', titulo, autor, docx_bytes=docx_b,
                                   dedicatoria=dedicatoria,
-                                  epigrafe=epigrafe, epigrafe_autor=epigrafe_autor)
+                                  epigrafe=epigrafe, epigrafe_autor=epigrafe_autor,
+                                  asesora=asesora,
+                                  tipo_papel=tipo_papel, acabado=acabado)
         else:
             print(f'[preview] generando desde texto plano')
             pdf = generar_preview(d.get('texto',''), titulo, autor,
                                   dedicatoria=dedicatoria,
-                                  epigrafe=epigrafe, epigrafe_autor=epigrafe_autor)
+                                  epigrafe=epigrafe, epigrafe_autor=epigrafe_autor,
+                                  asesora=asesora,
+                                  tipo_papel=tipo_papel, acabado=acabado)
 
         if not pdf:
             print(f'[preview] ERROR: generar_preview devolvió bytes vacíos')
@@ -605,12 +614,15 @@ def procesar_manuscrito():
         if incluir_pdfs:
             informe_bytes = generar_informe(datos_informe)
 
-            # 6. Generar preview PDF
+            # 6. Generar preview PDF (pasamos la asesora para personalizar la página final)
+            asesora_slug = (asesora or 'laura').strip().lower()
             if docx_bytes_para_maqueta:
-                preview_bytes = generar_preview('', titulo, autor, docx_bytes=docx_bytes_para_maqueta)
+                preview_bytes = generar_preview('', titulo, autor, docx_bytes=docx_bytes_para_maqueta,
+                                                asesora=asesora_slug)
             else:
                 # Para PDF: pasar los bloques ya parseados para conservar estructura
-                preview_bytes = generar_preview('', titulo, autor, bloques=ms.bloques)
+                preview_bytes = generar_preview('', titulo, autor, bloques=ms.bloques,
+                                                asesora=asesora_slug)
 
         # 7. Nombres de archivo profesionales
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip()

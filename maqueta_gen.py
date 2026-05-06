@@ -89,6 +89,15 @@ LOGO_PATH = next((p for p in [
     os.path.join(_HERE, 'logotipo-editorial-numancia-apaisado-color-hexadecimal.png'),
 ] if os.path.isfile(p)), None)
 
+# Tree-Nation logo (siempre en B&N para coherencia con el resto de la hoja)
+TREE_NATION_LOGO = next((p for p in [
+    os.path.join(_HERE, 'fotos', 'tree-nation-logo-bn.png'),
+    os.path.join(_HERE, 'fotos', 'tree-nation-logo.png'),
+    os.path.join(_HERE, 'tree-nation-logo-bn.png'),
+] if os.path.isfile(p)), None)
+
+TREE_NATION_URL = 'https://tree-nation.com/es/perfil/printcolorweb.com'
+
 
 # ── Small caps helper ─────────────────────────────────────────────────────────
 def _small_caps(texto: str, size: float = SC_SIZE) -> str:
@@ -322,6 +331,105 @@ def hdr_c(c, doc):
 def hdr_b(c, doc): pass
 
 
+# ── Bloque Tree-Nation (sello al pie de los créditos) ────────────────────────
+def _bloque_tree_nation(story, autor, S):
+    """
+    Sello marketinero al final de la hoja de créditos:
+    separador + logo Tree-Nation + texto + tagline + QR + URL.
+
+    El árbol se planta "en nombre de [autor]" — siempre hay autor por norma
+    editorial; si por alguna razón el campo viene vacío, fallback genérico.
+    """
+    from reportlab.platypus import Image as RLImage, Table, TableStyle
+
+    # Separador: línea fina centrada — apertura del sello marketinero
+    story.append(Spacer(1, 5*mm))
+    story.append(HRFlowable(width='35%', thickness=0.4,
+                             color=CL, hAlign='CENTER',
+                             spaceBefore=0, spaceAfter=4))
+
+    # Logo Tree-Nation centrado (30mm de ancho)
+    if TREE_NATION_LOGO:
+        try:
+            # Calcular alto basándose en las proporciones REALES del PNG
+            # (en lugar de hardcodear) para evitar achatado
+            try:
+                from PIL import Image as PILImage
+                _w, _h = PILImage.open(TREE_NATION_LOGO).size
+                ratio = _h / _w  # alto/ancho
+            except Exception:
+                ratio = 208 / 900  # fallback: ratio del logo original Tree-Nation
+            logo_w = 30 * mm
+            logo_h = logo_w * ratio
+            img = RLImage(TREE_NATION_LOGO, width=logo_w, height=logo_h)
+            t = Table([[img]], colWidths=[CUERPO_W])
+            t.setStyle(TableStyle([
+                ('ALIGN',       (0,0), (-1,-1), 'CENTER'),
+                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING',(0,0), (-1,-1), 0),
+                ('TOPPADDING',  (0,0), (-1,-1), 0),
+                ('BOTTOMPADDING',(0,0),(-1,-1), 0),
+            ]))
+            story.append(t)
+            story.append(Spacer(1, 2*mm))
+        except Exception as e:
+            print(f'[creditos] tree-nation logo: {e}')
+
+    # Texto principal con autor
+    nombre_autor = (autor or '').strip() or 'el autor'
+    story.append(Paragraph(
+        f'Por cada edición publicada plantamos un árbol<br/>'
+        f'en nombre de <b>{nombre_autor}</b><br/>'
+        f'en el bosque de Editorial Numancia, en colaboración con Tree-Nation',
+        S['cred']))
+    story.append(Spacer(1, 2*mm))
+
+    # Tagline marketinera en cursiva
+    tagline_style = ParagraphStyle(
+        'tn_tag', fontName=BF_I, fontSize=8, leading=11,
+        textColor=CG, alignment=TA_CENTER, spaceAfter=3)
+    story.append(Paragraph(
+        '<i>«Tu lectura deja huella verde»</i>',
+        tagline_style))
+    story.append(Spacer(1, 2*mm))
+
+    # QR code centrado, 16mm × 16mm (suficiente para móvil sin invadir la hoja)
+    try:
+        from reportlab.graphics.barcode import qr
+        from reportlab.graphics.shapes import Drawing
+        qr_widget = qr.QrCodeWidget(TREE_NATION_URL, barLevel='M')
+        bounds = qr_widget.getBounds()
+        qw = bounds[2] - bounds[0]
+        qh = bounds[3] - bounds[1]
+        qr_size = 16 * mm
+        qr_drawing = Drawing(qr_size, qr_size,
+                             transform=[qr_size/qw, 0, 0, qr_size/qh, 0, 0])
+        qr_drawing.add(qr_widget)
+        # Centrar usando una tabla (Drawing solo no respeta hAlign en algunos casos)
+        t_qr = Table([[qr_drawing]], colWidths=[CUERPO_W],
+                     rowHeights=[qr_size])
+        t_qr.setStyle(TableStyle([
+            ('ALIGN',        (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN',       (0,0), (-1,-1), 'MIDDLE'),
+            ('LEFTPADDING',  (0,0), (-1,-1), 0),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING',   (0,0), (-1,-1), 0),
+            ('BOTTOMPADDING',(0,0), (-1,-1), 0),
+        ]))
+        story.append(t_qr)
+        story.append(Spacer(1, 1*mm))
+    except Exception as e:
+        print(f'[creditos] error generando QR: {e}')
+
+    # URL bajo el QR — pequeña pero legible
+    story.append(Paragraph(
+        '<font size="6.2" color="#5A5A5A">'
+        'tree-nation.com/es/perfil/printcolorweb.com'
+        '</font>',
+        ParagraphStyle('tn_url', fontName=BF, fontSize=6.2, leading=8,
+                       textColor=CG, alignment=TA_CENTER)))
+
+
 # ── Página de créditos con logo ───────────────────────────────────────────────
 def _pagina_creditos(story, titulo, autor, anyo, S,
                      papel='Papel offset 90 g/m²',
@@ -387,15 +495,8 @@ def _pagina_creditos(story, titulo, autor, anyo, S,
     story.append(Paragraph('Impreso por Fullcolor Printcolor, S.L.', S['cred_b']))
     story.append(Paragraph('C/ Numancia 187, planta -1 · 08034 Barcelona', S['cred_g']))
 
-    story.append(Spacer(1, 4*mm))
-    story.append(HRFlowable(width='35%', thickness=0.4,
-                             color=CL, hAlign='CENTER', spaceAfter=4))
-    story.append(Paragraph(
-        f'Interior: {papel} · Cubierta: {cubierta_tipo}',
-        S['cred_g']))
-    story.append(Paragraph(
-        f'{laminado} · Encuadernación fresada · Impresión digital',
-        S['cred_g']))
+    # ── SELLO TREE-NATION (sustituye al bloque de papel/cubierta/laminado) ──
+    _bloque_tree_nation(story, autor, S)
 
 
 # ── Prelims ───────────────────────────────────────────────────────────────────

@@ -12,6 +12,12 @@ from informe_gen import generar_informe
 from preview_gen import generar_preview
 from maqueta_gen import generar_maqueta_completa
 from extractor import extraer_presupuesto
+from corrector_aplicado import (
+    crear_job_correccion,
+    get_job_status,
+    get_job_resultado,
+    limpiar_jobs_antiguos,
+)
 
 app = Flask(__name__)
 CORS(app)  # Permite llamadas desde Lovable y cualquier dominio
@@ -760,6 +766,127 @@ def procesar_manuscrito():
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+
+# ── POST /aplicar-correcciones ────────────────────────────────────────────────
+@app.route('/aplicar-correcciones', methods=['POST'])
+def aplicar_correcciones():
+    """
+    Inicia un job ASÍNCRONO de corrección IA sobre un .docx.
+
+    Body JSON:
+      {
+        "docx_base64":   "...",       # requerido — manuscrito original
+        "expediente_id": "P-2026-...",# opcional — identificador del expediente
+        "asesora":       "laura"      # opcional — slug o nombre completo
+      }
+
+    Devuelve inmediatamente:
+      { "ok": true, "job_id": "...", "estado": "pendiente" }
+
+    El cliente debe consultar /job-status/<job_id> cada ~10s para ver progreso,
+    y descargar el resultado con /job-resultado/<job_id> cuando estado=='completado'.
+    """
+    _check_auth()
+    try:
+        d = request.get_json(force=True) or {}
+
+        # Aceptar también multipart por comodidad
+        if not d.get('docx_base64') and request.files:
+            f = next(iter(request.files.values()))
+            docx_bytes = f.read()
+            expediente_id = request.form.get('expediente_id', '')
+            asesora = request.form.get('asesora', 'laura')
+        else:
+            if not d.get('docx_base64'):
+                return jsonify({'error': 'Campo "docx_base64" requerido'}), 400
+            try:
+                docx_bytes = base64.b64decode(d['docx_base64'])
+            except Exception as e:
+                return jsonify({'error': f'docx_base64 inválido: {e}'}), 400
+            expediente_id = d.get('expediente_id', '')
+            asesora = d.get('asesora', 'laura')
+
+        if len(docx_bytes) < 100:
+            return jsonify({'error': 'docx vacío o demasiado pequeño'}), 400
+
+        job_id = crear_job_correccion(
+            docx_bytes=docx_bytes,
+            expediente_id=expediente_id,
+            asesora=asesora,
+        )
+
+        print(f'[aplicar-correcciones] job creado: {job_id} '
+              f'expediente={expediente_id!r} asesora={asesora!r} '
+              f'docx={len(docx_bytes)//1024}KB', flush=True)
+
+        return jsonify({
+            'ok': True,
+            'job_id': job_id,
+            'estado': 'pendiente',
+            'mensaje': 'Procesamiento iniciado. Consulta el estado en /job-status/' + job_id,
+            'expediente_id': expediente_id,
+            'asesora': asesora,
+        }), 202  # 202 Accepted: procesamiento aceptado, aún no completado
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': f'{type(e).__name__}: {str(e)}'}), 500
+
+
+# ── GET /job-status/<job_id> ──────────────────────────────────────────────────
+@app.route('/job-status/<job_id>', methods=['GET'])
+def job_status(job_id):
+    """
+    Consulta el estado de un job de corrección.
+    Devuelve estado, progreso (0-100), mensaje, resumen (si está completado).
+    NO incluye el .docx para mantener el polling ligero.
+    """
+    _check_auth()
+    estado = get_job_status(job_id)
+    if estado is None:
+        return jsonify({'error': 'job_id no encontrado'}), 404
+    return jsonify({'ok': True, **estado})
+
+
+# ── GET /job-resultado/<job_id> ───────────────────────────────────────────────
+@app.route('/job-resultado/<job_id>', methods=['GET'])
+def job_resultado(job_id):
+    """
+    Descarga el .docx corregido de un job completado.
+    Devuelve el .docx codificado en base64 + resumen de cambios.
+    """
+    _check_auth()
+    estado = get_job_status(job_id)
+    if estado is None:
+        return jsonify({'error': 'job_id no encontrado'}), 404
+    if estado['estado'] != 'completado':
+        return jsonify({
+            'error': f'Job aún no completado (estado={estado["estado"]})',
+            'estado_actual': estado,
+        }), 409  # Conflict: el recurso no está listo
+
+    resultado = get_job_resultado(job_id)
+    if resultado is None:
+        return jsonify({'error': 'No se pudo recuperar el resultado'}), 500
+
+    return jsonify({
+        'ok': True,
+        **resultado,
+    })
+
+
+# ── POST /jobs-limpiar ────────────────────────────────────────────────────────
+@app.route('/jobs-limpiar', methods=['POST'])
+def jobs_limpiar():
+    """
+    Limpia jobs completados/error antiguos (default: >24h).
+    Útil llamar periódicamente vía cron desde Lovable.
+    """
+    _check_auth()
+    horas = int(request.args.get('horas', 24))
+    n = limpiar_jobs_antiguos(horas=horas)
+    return jsonify({'ok': True, 'jobs_borrados': n, 'horas': horas})
 
 
 # ── Arranque ──────────────────────────────────────────────────────────────────

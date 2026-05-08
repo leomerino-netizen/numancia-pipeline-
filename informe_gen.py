@@ -518,7 +518,6 @@ def generar_informe(d: dict) -> bytes:
         story.append(_seccion('Una nota personal de la asesora'))
         story.append(Spacer(1, 8))
 
-        # Marco crema sutil para destacar la carta como un mensaje personal
         carta_html = ''
         for parrafo in carta.split('\n\n'):
             parrafo = parrafo.strip()
@@ -529,29 +528,63 @@ def generar_informe(d: dict) -> bytes:
                 '<br/><br/>'
             )
 
-        # Firma de la asesora
-        asesora = d.get('evaluado_por','La asesora editorial')
-        firma_html = (
-            f'<para alignment="right">'
-            f'<font name="Times-Italic" size="10" color="#666666">— {asesora}</font><br/>'
-            f'<font name="Helvetica" size="6.5" color="#A88838">EDITORIAL NUMANCIA</font>'
-            f'</para>'
-        )
+        # Firma de la asesora ───────────────────────────────────────────────
+        asesora = d.get('evaluado_por') or d.get('asesora_nombre') or 'La asesora editorial'
+
+        # Resolver foto circular de la asesora a partir del nombre
+        import os, unicodedata
+        def _norm(s):
+            s = (s or '').lower().strip()
+            return ''.join(c for c in unicodedata.normalize('NFD', s)
+                           if unicodedata.category(c) != 'Mn')
+        FOTO_MAP = {
+            'nancy': 'nancy-circ.png',
+            'editorial numancia': 'nancy-circ.png',
+            'debora': 'debora-circ.png',
+            'debora tomas': 'debora-circ.png',
+            'juan': 'juan-circ.png',
+            'juan munoz': 'juan-circ.png',
+            'laura': 'laura-circ.png',
+            'laura vega ugarte': 'laura-circ.png',
+        }
+        nkey = _norm(asesora)
+        foto_file = FOTO_MAP.get(nkey) or FOTO_MAP.get(nkey.split(' ')[0]) if nkey else None
+        foto_path = os.path.join(os.path.dirname(__file__), 'fotos', foto_file) if foto_file else None
 
         contenido_carta = Paragraph(
             carta_html,
             S('car','Times-Italic',11,16,NEGRO,TA_JUSTIFY,
               leftIndent=2*mm, rightIndent=2*mm, spaceAfter=4))
 
-        firma_p = Paragraph(
-            f'<font name="Times-Italic" size="10" color="#666666">— {asesora}</font><br/>'
-            f'<font name="Helvetica" size="6.5" color="#A88838">EDITORIAL NUMANCIA</font>',
-            S('fma','Times-Italic',10,13,GRIS,TA_RIGHT,
-              rightIndent=2*mm, spaceAfter=2))
+        # Construir bloque firma: foto circular (izquierda) + nombre (derecha)
+        if foto_path and os.path.exists(foto_path):
+            from reportlab.platypus import Image as RLImage
+            foto_img = RLImage(foto_path, width=18*mm, height=18*mm)
+            firma_texto = Paragraph(
+                f'<font name="Times-Italic" size="10" color="#666666">— {asesora}</font><br/>'
+                f'<font name="Helvetica" size="6.5" color="#A88838">EDITORIAL NUMANCIA</font>',
+                S('fma','Times-Italic',10,13,GRIS,TA_RIGHT,
+                  rightIndent=2*mm, spaceAfter=2))
+            firma_block = Table(
+                [[foto_img, firma_texto]],
+                colWidths=[22*mm, W_DOC - 22*mm - 28]
+            )
+            firma_block.setStyle(TableStyle([
+                ('VALIGN', (0,0),(-1,-1),'MIDDLE'),
+                ('LEFTPADDING', (0,0),(-1,-1), 0),
+                ('RIGHTPADDING',(0,0),(-1,-1), 0),
+                ('TOPPADDING',  (0,0),(-1,-1), 0),
+                ('BOTTOMPADDING',(0,0),(-1,-1),0),
+            ]))
+        else:
+            firma_block = Paragraph(
+                f'<font name="Times-Italic" size="10" color="#666666">— {asesora}</font><br/>'
+                f'<font name="Helvetica" size="6.5" color="#A88838">EDITORIAL NUMANCIA</font>',
+                S('fma','Times-Italic',10,13,GRIS,TA_RIGHT,
+                  rightIndent=2*mm, spaceAfter=2))
 
-        # Encerramos en una tabla con fondo crema y borde dorado fino
         tbl_carta = Table(
-            [[contenido_carta], [firma_p]],
+            [[contenido_carta], [firma_block]],
             colWidths=[W_DOC]
         )
         tbl_carta.setStyle(TableStyle([
@@ -559,7 +592,7 @@ def generar_informe(d: dict) -> bytes:
             ('LEFTPADDING', (0,0),(-1,-1), 14),
             ('RIGHTPADDING',(0,0),(-1,-1), 14),
             ('TOPPADDING',  (0,0),(0,0),   12),
-            ('TOPPADDING',  (0,1),(0,1),   2),
+            ('TOPPADDING',  (0,1),(0,1),   6),
             ('BOTTOMPADDING',(0,0),(0,0),  4),
             ('BOTTOMPADDING',(0,1),(0,1),  10),
             ('LINEBELOW',   (0,-1),(-1,-1),0.6, DORADO),
@@ -567,6 +600,7 @@ def generar_informe(d: dict) -> bytes:
         ]))
         story.append(tbl_carta)
         story.append(Spacer(1, 12))
+
 
     # ── 10. Pie ──────────────────────────────────────────────────────────────
     story.append(HRFlowable(width='100%', thickness=0.4, color=DORADO, spaceAfter=4))

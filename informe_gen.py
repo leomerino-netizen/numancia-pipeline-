@@ -476,14 +476,18 @@ def generar_informe(d: dict) -> bytes:
                 '<br/><br/>'
             )
 
-        # Firma de la asesora ───────────────────────────────────────────────
+         # Firma de la asesora ───────────────────────────────────────────────
         asesora = d.get('evaluado_por') or d.get('asesora_nombre') or 'La asesora editorial'
 
         import os, unicodedata
+
         def _norm(s):
             s = (s or '').lower().strip()
-            return ''.join(c for c in unicodedata.normalize('NFD', s)
-                           if unicodedata.category(c) != 'Mn')
+            return ''.join(
+                c for c in unicodedata.normalize('NFD', s)
+                if unicodedata.category(c) != 'Mn'
+            )
+
         FOTO_MAP = {
             'nancy': 'nancy-circ.png',
             'editorial numancia': 'nancy-circ.png',
@@ -494,46 +498,102 @@ def generar_informe(d: dict) -> bytes:
             'laura': 'laura-circ.png',
             'laura vega ugarte': 'laura-circ.png',
         }
+
         nkey = _norm(asesora)
         foto_file = (FOTO_MAP.get(nkey) or FOTO_MAP.get(nkey.split(' ')[0])) if nkey else None
         foto_path = os.path.join(os.path.dirname(__file__), 'fotos', foto_file) if foto_file else None
 
         contenido_carta = Paragraph(
             carta_html,
-            S('car','Times-Italic',11,16,NEGRO,TA_JUSTIFY,
-              leftIndent=2*mm, rightIndent=2*mm, spaceAfter=4))
+            S(
+                'car',
+                'Times-Italic',
+                11,
+                16,
+                NEGRO,
+                TA_JUSTIFY,
+                leftIndent=2*mm,
+                rightIndent=2*mm,
+                spaceAfter=4
+            )
+        )
 
         firma_texto = Paragraph(
             f'<font name="Times-Italic" size="10" color="#666666">— {asesora}</font><br/>'
             f'<font name="Helvetica" size="6.5" color="#A88838">EDITORIAL NUMANCIA</font>',
-            S('fma','Times-Italic',10,13,GRIS,TA_RIGHT,
-              rightIndent=2*mm, spaceAfter=2))
+            S(
+                'fma',
+                'Times-Italic',
+                10,
+                13,
+                GRIS,
+                TA_RIGHT,
+                rightIndent=0,
+                spaceAfter=2
+            )
+        )
 
-        # Bloque firma: foto ENCIMA del nombre, ambos alineados a la derecha
+        # Bloque firma: foto ARRIBA A LA DERECHA, justo encima del nombre
+        firma_flow = []
+
         if foto_path and os.path.exists(foto_path):
             from reportlab.platypus import Image as RLImage
+
             foto_img = RLImage(foto_path, width=18*mm, height=18*mm)
             foto_img.hAlign = 'RIGHT'
-            firma_block = [foto_img, Spacer(1, 3), firma_texto]
-        else:
-            firma_block = [firma_texto]
+
+            firma_flow.append(foto_img)
+            firma_flow.append(Spacer(1, 2*mm))
+
+        firma_flow.append(firma_texto)
+
+        # Tabla interna estrecha alineada a la derecha.
+        # Esto evita que ReportLab mande la foto a la izquierda dentro de la celda grande.
+        firma_tbl = Table(
+            [[firma_flow]],
+            colWidths=[42*mm],
+            hAlign='RIGHT'
+        )
+
+        firma_tbl.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
 
         tbl_carta = Table(
-            [[contenido_carta], [firma_block]],
+            [
+                [contenido_carta],
+                [firma_tbl],
+            ],
             colWidths=[W_DOC]
         )
+
         tbl_carta.setStyle(TableStyle([
-            ('BACKGROUND', (0,0),(-1,-1), CREMA),
-            ('LEFTPADDING', (0,0),(-1,-1), 14),
-            ('RIGHTPADDING',(0,0),(-1,-1), 14),
-            ('TOPPADDING',  (0,0),(0,0),   12),
-            ('TOPPADDING',  (0,1),(0,1),   6),
-            ('BOTTOMPADDING',(0,0),(0,0),  4),
-            ('BOTTOMPADDING',(0,1),(0,1),  10),
-            ('LINEBELOW',   (0,-1),(-1,-1),0.6, DORADO),
-            ('LINEABOVE',   (0,0),(-1,0),  0.6, DORADO),
+            ('BACKGROUND', (0, 0), (-1, -1), CREMA),
+
+            ('LEFTPADDING', (0, 0), (-1, -1), 14),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 14),
+
+            ('TOPPADDING', (0, 0), (0, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (0, 0), 4),
+
+            ('TOPPADDING', (0, 1), (0, 1), 6),
+            ('BOTTOMPADDING', (0, 1), (0, 1), 10),
+
+            # Importante: alinear toda la celda de firma a la derecha
+            ('ALIGN', (0, 1), (0, 1), 'RIGHT'),
+            ('VALIGN', (0, 1), (0, 1), 'TOP'),
+
+            ('LINEBELOW', (0, -1), (-1, -1), 0.6, DORADO),
+            ('LINEABOVE', (0, 0), (-1, 0), 0.6, DORADO),
         ]))
+
         story.append(tbl_carta)
+
         story.append(Spacer(1, 12))
 
     # ── 10. Pie ──────────────────────────────────────────────────────────────

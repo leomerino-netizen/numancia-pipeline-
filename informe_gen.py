@@ -3,6 +3,7 @@ informe_gen.py — Informe de lectura y valoración profesional Editorial Numanc
 Diseño tipo Penguin Random House / Planeta: serif elegante, cabecera crema con logo color,
 evaluación expandida y carta personal de la asesora al autor.
 """
+
 import io, os
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -14,16 +15,16 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
 
 # Paleta editorial sobria
-CREMA       = colors.HexColor('#F8F4EC')   # fondo cabecera
-NEGRO       = colors.HexColor('#1A1A1A')   # texto principal
+CREMA       = colors.HexColor('#F8F4EC')
+NEGRO       = colors.HexColor('#1A1A1A')
 GRIS_OSC    = colors.HexColor('#3A3A3A')
 GRIS        = colors.HexColor('#666666')
 GRIS_CL     = colors.HexColor('#B5B5B5')
-GRIS_LINEA  = colors.HexColor('#D4CEC2')   # tono crema oscuro
-DORADO      = colors.HexColor('#A88838')   # detalle elegante
+GRIS_LINEA  = colors.HexColor('#D4CEC2')
+DORADO      = colors.HexColor('#A88838')
 DORADO_CL   = colors.HexColor('#E8DDB8')
-ROJO_ED     = colors.HexColor('#7A1F1F')   # rojo editorial Penguin
-VERDE_ED    = colors.HexColor('#1F4D2C')   # verde Planeta
+ROJO_ED     = colors.HexColor('#7A1F1F')
+VERDE_ED    = colors.HexColor('#1F4D2C')
 BLANCO      = colors.white
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -35,7 +36,6 @@ LOGO_PATH = next((p for p in [
     os.path.join(_HERE, 'logo_numancia_bn.png'),
 ] if os.path.isfile(p)), None)
 
-# Favicon cuadrado para miniatura del PDF
 FAVICON_PATH = next((p for p in [
     os.path.join(_HERE, 'fotos', 'favicon_numancia.png'),
     os.path.join(_HERE, 'favicon_numancia.png'),
@@ -43,15 +43,11 @@ FAVICON_PATH = next((p for p in [
 
 W_DOC = A4[0] - 36*mm
 
-
 def S(name, font='Helvetica', size=9, leading=12, color=NEGRO, align=TA_LEFT, **kw):
     return ParagraphStyle(name, fontName=font, fontSize=size, leading=leading,
                           textColor=color, alignment=align, **kw)
 
-
 # ── Registro de DejaVuSans para estrellas ─────────────────────────────────────
-# DejaVuSans incluye U+2605 (★) y se embebe en el repo (carpeta fonts/).
-# Esto garantiza que las estrellas rendericen siempre, sin depender del SO.
 _STAR_FONT = None
 def _registrar_fuente_estrellas():
     global _STAR_FONT
@@ -70,7 +66,6 @@ def _registrar_fuente_estrellas():
                 return _STAR_FONT
             except Exception as e:
                 print(f'[informe] Error registrando DejaVuSans: {e}')
-        # Fallback al sistema
         for path in ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
                      '/usr/share/fonts/dejavu/DejaVuSans.ttf']:
             if os.path.exists(path):
@@ -79,22 +74,17 @@ def _registrar_fuente_estrellas():
                 return _STAR_FONT
     except Exception as e:
         print(f'[informe] No se pudo registrar fuente de estrellas: {e}')
-    _STAR_FONT = 'Helvetica'   # último fallback (estrella saldrá como cuadrado)
+    _STAR_FONT = 'Helvetica'
     return _STAR_FONT
 
-
-# ── Estrellas elegantes (doradas + grises) ────────────────────────────────────
 def _estrellas(pts_str):
     s = str(pts_str).strip()
     n = 0
-    # 1) Si contiene caracteres de estrella, cuéntalos
     if '★' in s:
         n = s.count('★')
     elif '☆' in s and '★' not in s:
-        # Solo estrellas vacías → 0
         n = 0
     else:
-        # 2) Buscar el primer dígito 0-5 en la cadena
         import re as _re
         m = _re.search(r'[0-5]', s)
         if m:
@@ -103,20 +93,18 @@ def _estrellas(pts_str):
             except:
                 n = 0
         else:
-            # 3) Detectar palabras: "cinco" "cuatro" "tres" "dos" "uno"
-            palabras = {'cinco':5, 'cuatro':4, 'tres':3, 'dos':2, 'uno':1, 'una':1, 'cero':0}
+            palabras = {'cinco':5,'cuatro':4,'tres':3,'dos':2,'uno':1,'una':1,'cero':0}
             for k, v in palabras.items():
                 if k in s.lower():
                     n = v; break
     n = max(0, min(5, n))
     fuente = _registrar_fuente_estrellas()
-    print(f'[informe] _estrellas({pts_str!r}) → n={n} (fuente={fuente}) [tipo={type(pts_str).__name__}]', flush=True)
+    print(f'[informe] _estrellas({pts_str!r}) → n={n} (fuente={fuente})', flush=True)
     return (
         f'<font name="{fuente}" size="14" color="#A88838">{"\u2605" * n}</font>'
         f'<font name="{fuente}" size="14" color="#D4CEC2">{"\u2605" * (5 - n)}</font>'
         f'<br/><font name="Helvetica-Oblique" size="6.5" color="#888888">{n} de 5</font>'
     )
-
 
 def _veredicto_color(v):
     v = (v or '').upper()
@@ -126,15 +114,8 @@ def _veredicto_color(v):
         return DORADO
     return ROJO_ED
 
-
 # ── Cabecera editorial profesional ────────────────────────────────────────────
 def _cabecera(d):
-    """
-    Cabecera estilo Penguin/Planeta:
-    - Fondo crema con logo color a la izquierda
-    - Texto elegante a la derecha
-    - Sin recargos visuales
-    """
     if LOGO_PATH:
         try:
             from PIL import Image as PIL
@@ -166,8 +147,7 @@ def _cabecera(d):
         '<font name="Helvetica-Oblique" size="6.5" color="#888888">Documento confidencial · uso interno</font>',
         S('rh','Helvetica',9,12,NEGRO,TA_RIGHT))
 
-    cab = Table([[logo, der]],
-                colWidths=[W_DOC*0.50, W_DOC*0.50])
+    cab = Table([[logo, der]], colWidths=[W_DOC*0.50, W_DOC*0.50])
     cab.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,-1), CREMA),
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
@@ -179,8 +159,6 @@ def _cabecera(d):
     ]))
     return cab
 
-
-# ── Banda de meta (asesora · fecha · ref) ─────────────────────────────────────
 def _banda_meta(d):
     txt = (
         f'<font name="Helvetica-Bold" size="7.5" color="#A88838">ASESORA EDITORIAL</font>  '
@@ -199,8 +177,6 @@ def _banda_meta(d):
     ]))
     return t
 
-
-# ── Sección elegante con título ───────────────────────────────────────────────
 def _seccion(titulo, color=NEGRO):
     txt = f'<font name="Helvetica-Bold" size="8" color="#A88838" >{titulo.upper()}</font>'
     p = Paragraph(txt, S('s','Helvetica-Bold',8,11,DORADO,letterSpacing=3))
@@ -214,8 +190,6 @@ def _seccion(titulo, color=NEGRO):
     ]))
     return t
 
-
-# ── Ficha técnica ─────────────────────────────────────────────────────────────
 def _ficha(rows):
     data = []
     for k, v in rows:
@@ -238,8 +212,6 @@ def _ficha(rows):
     ]))
     return t
 
-
-# ── Tabla evaluación con observaciones expandidas ─────────────────────────────
 def _tabla_evaluacion(eval_list):
     rows = [[
         Paragraph('<font name="Helvetica-Bold" size="7" color="#A88838" >CRITERIO</font>',
@@ -251,14 +223,12 @@ def _tabla_evaluacion(eval_list):
     ]]
     for e in (eval_list or []):
         rows.append([
-            Paragraph(
-                f'<font name="Times-Bold" size="9.5" color="#1A1A1A">{e.get("criterio","")}</font>',
-                S('ec','Times-Bold',9.5,12)),
+            Paragraph(f'<font name="Times-Bold" size="9.5" color="#1A1A1A">{e.get("criterio","")}</font>',
+                      S('ec','Times-Bold',9.5,12)),
             Paragraph(_estrellas(e.get('estrellas','0/5')),
                       S('es','Helvetica',13,16,align=TA_CENTER)),
-            Paragraph(
-                f'<font name="Times-Italic" size="9" color="#3A3A3A">{e.get("obs","")}</font>',
-                S('eob','Times-Italic',9,12.5,GRIS_OSC,TA_JUSTIFY)),
+            Paragraph(f'<font name="Times-Italic" size="9" color="#3A3A3A">{e.get("obs","")}</font>',
+                      S('eob','Times-Italic',9,12.5,GRIS_OSC,TA_JUSTIFY)),
         ])
     t = Table(rows, colWidths=[36*mm, 28*mm, W_DOC - 36*mm - 28*mm])
     t.setStyle(TableStyle([
@@ -273,8 +243,6 @@ def _tabla_evaluacion(eval_list):
     ]))
     return t
 
-
-# ── Bloque veredicto ──────────────────────────────────────────────────────────
 def _bloque_veredicto(veredicto, justificacion):
     color = _veredicto_color(veredicto)
     icono = '✓' if 'PUBLICABLE' in (veredicto or '').upper() and 'CON' not in (veredicto or '').upper() else \
@@ -303,7 +271,6 @@ def _bloque_veredicto(veredicto, justificacion):
     ]))
     return t
 
-
 # ── Generador principal ───────────────────────────────────────────────────────
 def generar_informe(d: dict) -> bytes:
     buf = io.BytesIO()
@@ -317,12 +284,10 @@ def generar_informe(d: dict) -> bytes:
         producer='Editorial Numancia')
     story = []
 
-    # ── 1. Cabecera editorial ────────────────────────────────────────────────
     story.append(_cabecera(d))
     story.append(_banda_meta(d))
     story.append(Spacer(1, 10))
 
-    # ── 2. Título de la obra ─────────────────────────────────────────────────
     story.append(Paragraph(
         f'<font name="Times-Bold" size="30" color="#1A1A1A">{d.get("titulo","")}</font>',
         S('tit','Times-Bold',30,34,NEGRO,TA_LEFT,spaceBefore=2)))
@@ -335,7 +300,6 @@ def generar_informe(d: dict) -> bytes:
         S('gen','Helvetica',8,11,DORADO,TA_LEFT,letterSpacing=2,spaceBefore=4,spaceAfter=8)))
     story.append(HRFlowable(width='100%', thickness=0.5, color=GRIS_LINEA, spaceAfter=10))
 
-    # ── 3. Ficha técnica ─────────────────────────────────────────────────────
     story.append(_seccion('Ficha técnica'))
     story.append(Spacer(1, 4))
     f = _ficha([
@@ -350,7 +314,6 @@ def generar_informe(d: dict) -> bytes:
     if f: story.append(f)
     story.append(Spacer(1, 10))
 
-    # ── 4. Sinopsis ──────────────────────────────────────────────────────────
     if any(d.get(k) for k in ('sinopsis_i','sinopsis_ii','sinopsis_iii')):
         story.append(_seccion('Sinopsis'))
         story.append(Spacer(1, 6))
@@ -362,19 +325,16 @@ def generar_informe(d: dict) -> bytes:
                 story.append(Paragraph(d[k], SIN))
         story.append(Spacer(1, 10))
 
-    # ── 5. Evaluación editorial ──────────────────────────────────────────────
     story.append(_seccion('Evaluación editorial'))
     story.append(Spacer(1, 4))
     story.append(_tabla_evaluacion(d.get('eval', [])))
     story.append(Spacer(1, 10))
 
-    # ── 6. Veredicto destacado ───────────────────────────────────────────────
     story.append(_bloque_veredicto(
         d.get('veredicto','CON MEJORAS'),
         d.get('veredicto_texto','')))
     story.append(Spacer(1, 12))
 
-    # ── 7. Público objetivo y comparables ────────────────────────────────────
     story.append(_seccion('Encaje en el mercado'))
     story.append(Spacer(1, 4))
     pub = _ficha([
@@ -386,7 +346,6 @@ def generar_informe(d: dict) -> bytes:
     if pub: story.append(pub)
     story.append(Spacer(1, 10))
 
-    # ── 8. Notas editoriales ─────────────────────────────────────────────────
     if d.get('notas'):
         story.append(_seccion('Notas editoriales'))
         story.append(Spacer(1, 6))
@@ -399,17 +358,13 @@ def generar_informe(d: dict) -> bytes:
                       leftIndent=6*mm, spaceAfter=4)))
         story.append(Spacer(1, 12))
 
-    # ── 8-bis. Análisis ortotipográfico preliminar ───────────────────────────
+    # ── 8-bis. Análisis ortotipográfico preliminar ──────────────────────────
     orto = d.get('ortotipo')
     if orto and orto.get('total_incidencias', 0) >= 0 and orto.get('incidencias'):
         story.append(_seccion('Análisis ortotipográfico preliminar'))
         story.append(Spacer(1, 6))
-
-        # Resumen general
         total = orto.get('total_incidencias', 0)
         cats  = orto.get('categorias_afectadas', 0)
-
-        # Cabecera con cifras destacadas
         cifras = Table([[
             Paragraph(
                 f'<font name="Times-Bold" size="22" color="#A88838">{total}</font><br/>'
@@ -435,7 +390,6 @@ def generar_informe(d: dict) -> bytes:
         story.append(cifras)
         story.append(Spacer(1, 8))
 
-        # Tabla de categorías detectadas con ejemplos
         rows = [[
             Paragraph('<font name="Helvetica-Bold" size="7" color="#A88838">CATEGORÍA</font>',
                       S('och','Helvetica-Bold',7,10,DORADO)),
@@ -452,17 +406,14 @@ def generar_informe(d: dict) -> bytes:
             ejemplo_txt = ''
             if inc.get('ejemplos'):
                 ej = _esc(inc['ejemplos'][0])
-                # Marcas « » → resaltado rojo del error detectado
                 ej = ej.replace('«', '<font color="#7A1F1F"><b>').replace('»', '</b></font>')
                 ejemplo_txt = (
                     '<font name="Helvetica-Bold" size="6.5" color="#A88838">EJEMPLO DETECTADO</font><br/>'
                     f'<font name="Times-Italic" size="8.5" color="#3A3A3A">{ej}</font><br/><br/>'
                 )
-
             reco  = _esc(inc.get('recomendacion',''))
             norma = _esc(inc.get('norma',''))
             nota  = _esc(inc.get('nota',''))
-
             celda_derecha = (
                 ejemplo_txt
                 + '<font name="Helvetica-Bold" size="6.5" color="#A88838">RECOMENDACIÓN</font><br/>'
@@ -472,7 +423,6 @@ def generar_informe(d: dict) -> bytes:
                 + (f'<font name="Helvetica-Bold" size="6.5" color="#A88838">NOTA</font><br/>'
                    f'<font name="Helvetica" size="7.5" color="#666666">{nota}</font>' if nota else '')
             )
-
             rows.append([
                 Paragraph(
                     f'<font name="Times-Bold" size="9.5" color="#1A1A1A">{_esc(inc["categoria"])}</font><br/>'
@@ -500,8 +450,6 @@ def generar_informe(d: dict) -> bytes:
         ]))
         story.append(tbl)
         story.append(Spacer(1, 6))
-
-        # Nota al pie
         story.append(Paragraph(
             '<font name="Times-Italic" size="7.5" color="#666666">'
             'Análisis basado en la <b>Ortografía RAE 2010</b>, el <b>DLE 23.ª edición</b> y los criterios de '
@@ -512,7 +460,7 @@ def generar_informe(d: dict) -> bytes:
               leftIndent=4*mm, rightIndent=4*mm)))
         story.append(Spacer(1, 12))
 
-    # ── 9. Carta de la asesora al autor (siempre presente) ──────────────────
+    # ── 9. Carta de la asesora al autor ──────────────────────────────────────
     carta = (d.get('carta_autor') or '').strip()
     if carta:
         story.append(_seccion('Una nota personal de la asesora'))
@@ -531,7 +479,6 @@ def generar_informe(d: dict) -> bytes:
         # Firma de la asesora ───────────────────────────────────────────────
         asesora = d.get('evaluado_por') or d.get('asesora_nombre') or 'La asesora editorial'
 
-        # Resolver foto circular de la asesora a partir del nombre
         import os, unicodedata
         def _norm(s):
             s = (s or '').lower().strip()
@@ -548,7 +495,7 @@ def generar_informe(d: dict) -> bytes:
             'laura vega ugarte': 'laura-circ.png',
         }
         nkey = _norm(asesora)
-        foto_file = FOTO_MAP.get(nkey) or FOTO_MAP.get(nkey.split(' ')[0]) if nkey else None
+        foto_file = (FOTO_MAP.get(nkey) or FOTO_MAP.get(nkey.split(' ')[0])) if nkey else None
         foto_path = os.path.join(os.path.dirname(__file__), 'fotos', foto_file) if foto_file else None
 
         contenido_carta = Paragraph(
@@ -556,32 +503,20 @@ def generar_informe(d: dict) -> bytes:
             S('car','Times-Italic',11,16,NEGRO,TA_JUSTIFY,
               leftIndent=2*mm, rightIndent=2*mm, spaceAfter=4))
 
-        # Construir bloque firma: foto circular (izquierda) + nombre (derecha)
+        firma_texto = Paragraph(
+            f'<font name="Times-Italic" size="10" color="#666666">— {asesora}</font><br/>'
+            f'<font name="Helvetica" size="6.5" color="#A88838">EDITORIAL NUMANCIA</font>',
+            S('fma','Times-Italic',10,13,GRIS,TA_RIGHT,
+              rightIndent=2*mm, spaceAfter=2))
+
+        # Bloque firma: foto ENCIMA del nombre, ambos alineados a la derecha
         if foto_path and os.path.exists(foto_path):
             from reportlab.platypus import Image as RLImage
             foto_img = RLImage(foto_path, width=18*mm, height=18*mm)
-            firma_texto = Paragraph(
-                f'<font name="Times-Italic" size="10" color="#666666">— {asesora}</font><br/>'
-                f'<font name="Helvetica" size="6.5" color="#A88838">EDITORIAL NUMANCIA</font>',
-                S('fma','Times-Italic',10,13,GRIS,TA_RIGHT,
-                  rightIndent=2*mm, spaceAfter=2))
-            firma_block = Table(
-                [[foto_img, firma_texto]],
-                colWidths=[22*mm, W_DOC - 22*mm - 28]
-            )
-            firma_block.setStyle(TableStyle([
-                ('VALIGN', (0,0),(-1,-1),'MIDDLE'),
-                ('LEFTPADDING', (0,0),(-1,-1), 0),
-                ('RIGHTPADDING',(0,0),(-1,-1), 0),
-                ('TOPPADDING',  (0,0),(-1,-1), 0),
-                ('BOTTOMPADDING',(0,0),(-1,-1),0),
-            ]))
+            foto_img.hAlign = 'RIGHT'
+            firma_block = [foto_img, Spacer(1, 3), firma_texto]
         else:
-            firma_block = Paragraph(
-                f'<font name="Times-Italic" size="10" color="#666666">— {asesora}</font><br/>'
-                f'<font name="Helvetica" size="6.5" color="#A88838">EDITORIAL NUMANCIA</font>',
-                S('fma','Times-Italic',10,13,GRIS,TA_RIGHT,
-                  rightIndent=2*mm, spaceAfter=2))
+            firma_block = [firma_texto]
 
         tbl_carta = Table(
             [[contenido_carta], [firma_block]],
@@ -601,7 +536,6 @@ def generar_informe(d: dict) -> bytes:
         story.append(tbl_carta)
         story.append(Spacer(1, 12))
 
-
     # ── 10. Pie ──────────────────────────────────────────────────────────────
     story.append(HRFlowable(width='100%', thickness=0.4, color=DORADO, spaceAfter=4))
     story.append(Paragraph(
@@ -615,23 +549,16 @@ def generar_informe(d: dict) -> bytes:
 
     doc.build(story)
 
-    # Embeber thumbnail (favicon) en los metadatos PDF
     pdf_bytes = buf.getvalue()
     if FAVICON_PATH:
         try:
             pdf_bytes = _embed_thumbnail(pdf_bytes, FAVICON_PATH)
         except Exception as e:
             print(f'[informe_gen] Thumbnail no embebido: {e}')
-
     return pdf_bytes
 
 
 def _embed_thumbnail(pdf_bytes: bytes, icon_path: str) -> bytes:
-    """
-    Embebe un icono PNG como miniatura en el primer page del PDF.
-    Usa el formato /Thumb que ReportLab no expone directamente.
-    Si pypdf está disponible, lo usa; si no, devuelve el PDF intacto.
-    """
     try:
         from pypdf import PdfReader, PdfWriter
         from pypdf.generic import (NameObject, NumberObject, ByteStringObject,
@@ -639,7 +566,6 @@ def _embed_thumbnail(pdf_bytes: bytes, icon_path: str) -> bytes:
         from PIL import Image as PILImage
         import io as _io
 
-        # Cargar el icono y convertir a stream JPEG (PDF prefiere JPEG para thumbs)
         img = PILImage.open(icon_path).convert('RGB')
         img.thumbnail((128, 128), PILImage.LANCZOS)
         buf = _io.BytesIO()
@@ -650,7 +576,6 @@ def _embed_thumbnail(pdf_bytes: bytes, icon_path: str) -> bytes:
         reader = PdfReader(_io.BytesIO(pdf_bytes))
         writer = PdfWriter(clone_from=reader)
 
-        # Crear el stream del thumbnail
         from pypdf.generic import StreamObject
         thumb_stream = StreamObject()
         thumb_stream._data = jpg_data
@@ -664,8 +589,6 @@ def _embed_thumbnail(pdf_bytes: bytes, icon_path: str) -> bytes:
             NameObject('/Filter'):           NameObject('/DCTDecode'),
         })
         thumb_ref = writer._add_object(thumb_stream)
-
-        # Asignar el thumbnail a la primera página
         page = writer.pages[0]
         page[NameObject('/Thumb')] = thumb_ref
 
@@ -673,59 +596,4 @@ def _embed_thumbnail(pdf_bytes: bytes, icon_path: str) -> bytes:
         writer.write(out)
         return out.getvalue()
     except ImportError:
-        # pypdf no disponible — devolver PDF original
         return pdf_bytes
-
-
-if __name__ == '__main__':
-    datos = {
-        'titulo': 'SARA',
-        'autor': 'Ángel Rodríguez Poe',
-        'genero': 'Novela negra contemporánea',
-        'extension': '38.362 palabras · 21 capítulos · aprox. 153 págs. A5',
-        'ambientacion': 'Madrid contemporáneo, ámbitos urbanos nocturnos',
-        'fecha': '27 de abril de 2026',
-        'evaluado_por': 'Laura Vega Ugarte',
-        'sinopsis_i': 'Sara Reyes es inspectora de Homicidios en Madrid. De lunes a viernes resuelve crímenes con la frialdad metódica de quien lleva doce años viendo cadáveres. Los sábados, en cambio, cruza la puerta de un club discreto sin nombre y se transforma en otra mujer.',
-        'sinopsis_ii': 'En ese espacio donde las reglas del exterior quedan suspendidas, Sara encuentra una libertad que su vida diurna no le permite. La novela retrata con sensibilidad y crudeza los rituales de un universo invisible para la mayoría: cuerpos que se encuentran, máscaras que caen, identidades que se redefinen.',
-        'sinopsis_iii': 'Hasta que una noche, alguien le habla por primera vez. Alguien que conoce las reglas pero hace tiempo que no las usa. Una novela elegante y descarnada sobre las máscaras que llevamos y los espacios donde podemos quitárnoslas.',
-        'eval': [
-            {'criterio': 'Originalidad',       'estrellas': '4/5',
-             'obs': 'Tratamiento maduro y poco explorado en la narrativa española contemporánea del doble juego entre identidades públicas e íntimas. La protagonista funciona como espejo de muchas mujeres profesionales que se debaten entre rol social y deseo personal.'},
-            {'criterio': 'Calidad narrativa',  'estrellas': '5/5',
-             'obs': 'Prosa ágil, con economía descriptiva notable. La autora maneja el ritmo con maestría, alternando pasajes contemplativos y diálogos cortantes. Se nota un trabajo serio de pulido en cada escena.'},
-            {'criterio': 'Estructura',         'estrellas': '4/5',
-             'obs': 'Articulación clara en 21 capítulos breves que sostienen el ritmo. La alternancia entre la vida diurna y nocturna de Sara está bien dosificada. Se podría reforzar el arco final.'},
-            {'criterio': 'Estilo y voz',       'estrellas': '5/5',
-             'obs': 'Voz narrativa con personalidad reconocible: medida, irónica y a la vez vulnerable. El narrador consigue intimidad sin sentimentalismo. Esta es la mayor fortaleza del manuscrito.'},
-            {'criterio': 'Viabilidad comercial','estrellas': '4/5',
-             'obs': 'Encaje claro en el mercado de novela negra adulta con perspectiva femenina, segmento al alza en España desde el éxito de Redondo y García Sáenz. Tema con gancho mediático bien manejado.'},
-        ],
-        'veredicto': 'PUBLICABLE',
-        'veredicto_texto': 'El manuscrito presenta una propuesta narrativa sólida, madura y comercialmente viable. La protagonista funciona como eje vertebrador y la voz narrativa sostiene el interés del lector durante toda la lectura. Editorial Numancia considera esta obra apta para integrarse en su catálogo con un proceso editorial estándar.',
-        'lector_primario':   'Mujer adulta, 35-55 años, lectora habitual de narrativa contemporánea española y novela negra con perspectiva femenina',
-        'lector_secundario': 'Lector general de narrativa española actual y consumidor de thriller psicológico',
-        'comparable':        'Dolores Redondo · "El guardián invisible" / Eva García Sáenz · "El silencio de la ciudad blanca"',
-        'precio':            '19,90 € — 21,90 € (rústica con solapas)',
-        'notas': [
-            'Recomiendo mantener la voz narrativa actual sin intervenciones mayores; es el principal activo del manuscrito.',
-            'Sería aconsejable revisar la coherencia temporal entre los capítulos 8-12, donde se detectan dos pequeñas inconsistencias en la cronología interna.',
-            'Considerar campaña dirigida a clubes de lectura femeninos y librerías independientes con enfoque en novela negra de autora.',
-        ],
-        'carta_autor': (
-            'Ángel, leer tu manuscrito ha sido uno de esos momentos que '
-            'recuerdan por qué dedicamos nuestra vida a los libros. Sara es '
-            'una protagonista compleja, profundamente humana, y has construido '
-            'su mundo con un cuidado que no abunda en la narrativa actual. '
-            'Editorial Numancia cree firmemente en proyectos como el tuyo: '
-            'voces nuevas que merecen llegar al lector con todo el respaldo '
-            'editorial que la obra exige. Si decides publicar con nosotros, '
-            'no editamos un libro: te acompañamos en cada paso del camino, '
-            'desde la corrección final hasta la presentación pública. '
-            'Estaremos encantadas de seguir conversando.'
-        ),
-    }
-    pdf = generar_informe(datos)
-    with open('/mnt/user-data/outputs/Informe_NUEVO_premium.pdf','wb') as f:
-        f.write(pdf)
-    print(f'PDF: {len(pdf)//1024} KB · LOGO_PATH: {LOGO_PATH}')

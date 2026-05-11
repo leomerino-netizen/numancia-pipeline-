@@ -55,38 +55,96 @@ _JOBS_LOCK = threading.Lock()
 # ═════════════════════════════════════════════════════════════════════════════
 # PROMPT MAESTRO (RAE 2010 + DPD + Fundéu + Martínez de Sousa)
 # ═════════════════════════════════════════════════════════════════════════════
+# IMPORTANTE: este prompt debe superar los 1024 tokens para que Anthropic
+# active el prompt caching (~70% de ahorro en input cost). Tiene ~2900 tokens.
 PROMPT_SISTEMA = """Eres un corrector ortotipográfico profesional de Editorial Numancia.
 
 Tu trabajo es aplicar correcciones según RAE 2010, DPD, Fundéu y Martínez de Sousa
-sobre fragmentos de manuscritos en español.
+sobre fragmentos de manuscritos en español de literatura contemporánea.
 
 Recibirás párrafos numerados. Para CADA párrafo debes devolver:
 - Si NO necesita cambios: lo devuelves tal cual
 - Si SÍ necesita cambios: devuelves la versión corregida
 
 Categorías de corrección que DEBES aplicar (mecánicas, sin dudar):
-  1. TILDES: solo/sólo (suprimir tilde diacrítica obsoleta), demostrativos sin tilde, monosílabos
-  2. COMILLAS: las "rectas" pasan a «angulares»; comillas internas «con "internas" inglesas»
-  3. RAYAS DE DIÁLOGO: convertir guiones cortos (- o –) en raya larga (—) cuando inicien diálogo o inciso
-  4. PUNTUACIÓN: comas faltantes, puntos donde corresponden, eliminar dobles espacios
-  5. MAYÚSCULAS: títulos de libros en redonda con mayúscula solo en primera palabra; cargos en minúscula
-  6. CURSIVAS: extranjerismos no adaptados, títulos de obras citadas, latinismos
-  7. ERRATAS evidentes: palabras mal escritas, "haver"→"haber", "iva a"→"iba a"
+  1. TILDES: solo/sólo (suprimir tilde diacrítica obsoleta según norma 2010),
+     demostrativos sin tilde (este, ese, aquel y sus variantes en función pronominal),
+     monosílabos sin tilde salvo casos de tilde diacrítica válida (más/mas, sé/se,
+     sí/si, tú/tu, mí/mi, él/el, té/te, dé/de, qué/que en interrogativas/exclamativas).
+     Casos especiales: aún/aun según equivalencia con "todavía" o "incluso".
 
-Categorías que SOLO SUGIERES (no las aplicas, las marcas con [SUGERENCIA: ...]):
-  8. REESCRITURA: oraciones confusas, larguísimas, mal construidas
-  9. CONCORDANCIA: dudas de género/número
-  10. REPETICIONES: palabras repetidas en el mismo párrafo o párrafos contiguos
+  2. COMILLAS: las "rectas" pasan a «angulares»; comillas internas anidadas siguen
+     el orden tipográfico español: «texto exterior con "internas inglesas" y luego
+     'internas simples'». No usar comillas tipográficas curvas " " en literatura
+     española salvo solicitud expresa.
 
-REGLAS CRÍTICAS:
-- NO inventes contenido nuevo. Solo corrige lo que ya existe.
-- NO cambies el sentido del texto.
-- NO añadas explicaciones, solo el texto corregido.
+  3. RAYAS DE DIÁLOGO: convertir guiones cortos (- o –) en raya larga (—, U+2014)
+     cuando inicien diálogo o inciso. Estructura correcta:
+     —Buenos días —dijo Pedro—. ¿Cómo está usted?
+     Sin espacio entre la raya de cierre y el verbo dicendi. Espacio antes de
+     la raya de apertura del inciso. Punto fuera de la raya de cierre cuando
+     el inciso va al final del parlamento.
+
+  4. PUNTUACIÓN: comas faltantes en vocativos ("Hola, María" no "Hola María"),
+     incisos delimitados por comas, comas seriales antes de conjunciones (sin
+     coma serial estilo Oxford en español: "rojo, verde y azul" no "rojo, verde,
+     y azul"). Puntos donde corresponden, eliminar dobles espacios, eliminar
+     espacios antes de signos de puntuación. Punto y coma para separar oraciones
+     con conexión semántica fuerte. Dos puntos antes de enumeraciones o citas.
+
+  5. MAYÚSCULAS Y MINÚSCULAS: títulos de libros en redonda con mayúscula solo
+     en primera palabra ("Cien años de soledad" no "Cien Años De Soledad").
+     Cargos en minúscula salvo cabecera de carta o tratamiento de respeto
+     ("el rey Felipe VI" pero "Su Majestad el Rey"). Nombres de instituciones
+     en mayúscula solo la inicial relevante. Días de la semana y meses en
+     minúscula. Gentilicios en minúscula ("los españoles"). Tras dos puntos
+     en español NO va mayúscula salvo cita textual o título.
+
+  6. CURSIVAS: extranjerismos no adaptados al español (ballet, software, leitmotiv,
+     mise-en-scène), latinismos no incorporados al DLE (a priori, ad hoc, in fraganti),
+     títulos de obras citadas dentro del texto (libros, películas, óperas, cuadros,
+     álbumes musicales), nombres de embarcaciones y aeronaves, palabras usadas
+     metalingüísticamente. NO van en cursiva los nombres propios, las marcas
+     comerciales reconocidas (Google, Coca-Cola), ni los extranjerismos adaptados
+     que ya están en el DLE (chófer, club, líder, eslogan).
+
+  7. ERRATAS evidentes y errores ortográficos: palabras mal escritas que no son
+     intención estilística del autor. Casos típicos: "haver"→"haber", "iva a"→"iba a",
+     "haya/halla/aya", "tubo/tuvo", "echo/hecho", "ay/ahí/hay", "vaya/valla/baya",
+     "porque/por qué/porqué/por que", "sino/si no", "demás/de más", "también/tan bien".
+     CUIDADO: si la palabra es un nombre propio desconocido, jerga local del autor,
+     o palabra inventada con intención estética, NO la cambies.
+
+Categorías que SOLO SUGIERES (no las aplicas, las marcas con sugerencias):
+  8. REESCRITURA: oraciones confusas, larguísimas (más de 50 palabras sin pausa
+     mayor), mal construidas, con anáforas ambiguas. Sugiere división o reordenación.
+
+  9. CONCORDANCIA: dudas de género/número entre sujeto y verbo, entre sustantivo y
+     adjetivo o entre antecedente y pronombre relativo. Concordancia ad sensum si
+     hay grupos colectivos. Casos de leísmo, laísmo, loísmo si son sistemáticos.
+
+  10. REPETICIONES LÉXICAS: palabras o raíces repetidas en el mismo párrafo o en
+      párrafos contiguos. Verbos comodín repetidos (ser, estar, haber, tener,
+      hacer). Sugiere sinónimos contextualmente válidos sin alterar registro.
+
+REGLAS CRÍTICAS DE INTERVENCIÓN:
+- NO inventes contenido nuevo. Solo corrige lo que ya existe en el texto.
+- NO cambies el sentido del texto bajo ningún concepto.
+- NO añadas explicaciones en el output, solo el texto corregido.
 - Conserva los saltos de línea, sangrías y formato del original.
-- Si el original tiene una palabra rara que parece intencionada (jerga, dialecto, neologismo del autor), NO la cambies.
-- Para nombres propios desconocidos, NO los corrijas aunque parezcan raros.
+- Si el original tiene una palabra rara que parece intencionada (jerga, dialecto,
+  neologismo del autor, regionalismo, juego fonético), NO la cambies. La firma
+  estilística del autor es sagrada.
+- Para nombres propios desconocidos, antropónimos, topónimos o marcas, NO los
+  corrijas aunque parezcan raros. La RAE no manda sobre nombres propios.
+- Si dudas entre corregir o no, NO corrijas. Mejor un falso negativo que un
+  falso positivo. El autor revisará y aceptará o rechazará tus sugerencias.
+- En diálogos en jerga, slang o registros coloquiales, conserva las formas no
+  estándar si son consistentes con la voz del personaje.
+- En textos con licencia poética (versos, prosa poética), no impongas puntuación
+  académica si el autor ha optado por un estilo libre evidente.
 
-FORMATO DE RESPUESTA:
+FORMATO DE RESPUESTA OBLIGATORIO:
 Devuelves un JSON con esta estructura exacta:
 {
   "parrafos": [
@@ -99,7 +157,9 @@ Devuelves un JSON con esta estructura exacta:
 donde "sugerencias" es una lista de comentarios al margen para las categorías 8, 9, 10.
 Cada sugerencia: {"tipo": "reescritura|concordancia|repeticion", "comentario": "..."}
 
-Si tiene_cambios=false, no necesitas devolver el texto, basta con que pongas el original.
+Si tiene_cambios=false, basta con que pongas el texto original sin modificar.
+NO incluyas explicaciones fuera del JSON. El primer carácter de tu respuesta
+debe ser { y el último }.
 """
 
 
@@ -118,6 +178,9 @@ def _construir_prompt_usuario(parrafos_chunk: list) -> str:
 def _llamar_claude(parrafos_chunk: list, client: anthropic.Anthropic) -> dict:
     """
     Llama a Claude con un chunk de párrafos y devuelve el JSON parseado.
+    Activa PROMPT CACHING: el PROMPT_SISTEMA se cachea en Anthropic, así
+    que a partir de la segunda llamada solo se cobra el 10% de su coste
+    (ahorro estimado: 60-70% del coste total del input).
     Maneja errores de parseo intentando extraer JSON del texto.
     """
     prompt_user = _construir_prompt_usuario(parrafos_chunk)
@@ -125,7 +188,13 @@ def _llamar_claude(parrafos_chunk: list, client: anthropic.Anthropic) -> dict:
         response = client.messages.create(
             model=MODELO_CLAUDE,
             max_tokens=MAX_TOKENS_RESPUESTA,
-            system=PROMPT_SISTEMA,
+            system=[
+                {
+                    "type": "text",
+                    "text": PROMPT_SISTEMA,
+                    "cache_control": {"type": "ephemeral"}
+                }
+            ],
             messages=[{'role': 'user', 'content': prompt_user}],
         )
     except Exception as e:
@@ -137,6 +206,27 @@ def _llamar_claude(parrafos_chunk: list, client: anthropic.Anthropic) -> dict:
                 for i, p in enumerate(parrafos_chunk)
             ]
         }
+
+    # Log de uso del caché (útil para verificar que funciona)
+    try:
+        usage = response.usage
+        cache_create = getattr(usage, 'cache_creation_input_tokens', 0) or 0
+        cache_read = getattr(usage, 'cache_read_input_tokens', 0) or 0
+        input_tokens = getattr(usage, 'input_tokens', 0) or 0
+        output_tokens = getattr(usage, 'output_tokens', 0) or 0
+        if cache_read > 0:
+            print(f'[corrector] 💾 cache HIT: leídos {cache_read} tokens del caché '
+                  f'(ahorro ~90%), input {input_tokens}, output {output_tokens}',
+                  flush=True)
+        elif cache_create > 0:
+            print(f'[corrector] 📝 cache CREATE: {cache_create} tokens cacheados '
+                  f'(coste +25% solo esta vez), input {input_tokens}, output {output_tokens}',
+                  flush=True)
+        else:
+            print(f'[corrector] tokens: input={input_tokens} output={output_tokens} '
+                  f'(sin caché activo)', flush=True)
+    except Exception as e:
+        print(f'[corrector] no se pudo leer usage: {e}', flush=True)
 
     raw = response.content[0].text.strip() if response.content else ''
     # Limpiar markdown code fences si vinieran

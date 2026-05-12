@@ -817,32 +817,40 @@ class NumanciaDocTemplate(BaseDocTemplate):
     """
     Subclase de BaseDocTemplate que detecta los _OddPageBreak (sentinel)
     y, cuando los procesa, comprueba la paridad de la página actual.
-    Si está en impar, inyecta un showPage extra para garantizar que el
-    siguiente contenido cae en página impar (recto/derecha).
+    Si está en par, INYECTA UN PAGEBREAK al pool _hanging de ReportLab
+    para que el siguiente flowable caiga en página impar (recto/derecha).
     
     Convención editorial PRH/Penguin/Planeta: capítulos SIEMPRE en página
     impar. Si la disposición natural deja el siguiente capítulo en par,
     se inserta una página blanca automáticamente.
+    
+    USO:
+        story.append(NextPageTemplate('blank'))
+        story.append(PageBreak())          # salta a la siguiente página
+        story.append(_OddPageBreak())      # si esa página es par, inyecta otra
+        story.append(NextPageTemplate('chap'))
+        # ... cap_titulo ...
     """
     def afterFlowable(self, flowable):
         """ReportLab llama esto tras renderizar cada flowable. self.page
         es el número de la página actual donde se está renderizando.
         
-        El sentinel _OddPageBreak garantiza que el siguiente flowable
-        empieza en página IMPAR (recto/derecha):
-        - El PageBreak previo en el story salta a página nueva
-        - El sentinel se procesa en esa nueva página
-        - Si esa página es PAR, fuerza otro salto vía handle_pageEnd/Begin
-          (que internamente llama a canv.showPage)
-        - Si ya es IMPAR, no hace nada
+        Cuando detectamos un _OddPageBreak en página PAR, inyectamos
+        un PageBreak al pool _hanging de ReportLab. _hanging es la cola
+        interna donde ReportLab guarda flowables pendientes — al añadir
+        ahí un PageBreak, se procesará antes del siguiente flowable del
+        story normal, sin manipular directamente el ciclo de página.
+        Esto evita páginas fantasma y desajustes de folio que ocurrían
+        con handle_pageEnd/handle_pageBegin directos.
         """
         if isinstance(flowable, _OddPageBreak):
             if self.page % 2 == 0:
+                # Página actual PAR → inyectar PageBreak para que el
+                # siguiente flowable caiga en impar
                 try:
-                    # handle_pageEnd internamente hace canv.showPage()
-                    # No llamar canv.showPage() además, sería doble salto
-                    self.handle_pageEnd()
-                    self.handle_pageBegin()
+                    if hasattr(self, '_hanging') and self._hanging is not None:
+                        from reportlab.platypus import PageBreak as _PB
+                        self._hanging.append(_PB())
                 except Exception as e:
                     print(f'[odd_break] no se pudo forzar impar: {e}', flush=True)
 

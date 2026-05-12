@@ -421,6 +421,12 @@ def generar_informe_pdf():
                 'incidencias':          orto.get('incidencias', []),
             }
 
+        # Normalizar numero_presupuesto: trim y vacío si no llega.
+        # Si está vacío, informe_gen NO lo imprimirá en el PDF.
+        d['numero_presupuesto'] = (d.get('numero_presupuesto') or '').strip()
+        if d['numero_presupuesto']:
+            print(f'[generar_informe_pdf] numero_presupuesto={d["numero_presupuesto"]!r}', flush=True)
+
         pdf = generar_informe(d)
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in d.get('titulo','informe'))[:50].strip()
         return _pdf_response(pdf, f'Informe de lectura y valoracion - {titulo_safe}.pdf')
@@ -588,6 +594,9 @@ def procesar_manuscrito():
         asesora    = request.form.get('asesora', 'laura')
         titulo_ovr = request.form.get('titulo', '')
         autor_ovr  = request.form.get('autor', '')
+        # Número de valoración (opcional) — viene del frontend Lovable.
+        # Si está vacío o no llega, no se imprime nada en el PDF.
+        numero_presupuesto = (request.form.get('numero_presupuesto') or '').strip()
         # Si incluir_pdfs=false, devolvemos solo los datos JSON (más rápido)
         # para que el asesor edite antes de generar los PDFs.
         incluir_pdfs = request.form.get('incluir_pdfs', 'true').lower() != 'false'
@@ -686,6 +695,7 @@ def procesar_manuscrito():
             'ambientacion':  analisis.get('ambientacion', ''),
             'fecha':         fecha_str,
             'evaluado_por':  asesoras_n.get(asesora, asesora),
+            'numero_presupuesto': numero_presupuesto,
             'sinopsis_i':    analisis.get('sinopsis_i', ''),
             'sinopsis_ii':   analisis.get('sinopsis_ii', ''),
             'sinopsis_iii':  analisis.get('sinopsis_iii', ''),
@@ -734,6 +744,7 @@ def procesar_manuscrito():
             'asesora':           asesora,
             'asesora_nombre':    asesoras_n.get(asesora, asesora),
             'fecha':             fecha_str,
+            'numero_presupuesto': numero_presupuesto,
             'sinopsis': {
                 'i':   datos_informe['sinopsis_i'],
                 'ii':  datos_informe['sinopsis_ii'],

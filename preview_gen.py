@@ -15,7 +15,7 @@ from maqueta_gen import (
     mk_frame, hdr_b, hdr_c, estilos, DropCap, _parse_texto,
     BF, BF_I, HF, HF_B, HF_I, HF_BI, CT, CG, CL, CUERPO_W,
     AW, AH, M_INT, M_EXT, M_TOP, M_BOT, _OddPageBreak,
-    _pagina_creditos
+    _pagina_creditos, NumanciaDocTemplate
 )
 
 # ── Fotos circulares de las asesoras ──────────────────────────────────────────
@@ -188,7 +188,7 @@ def generar_preview(texto: str, titulo: str, autor: str,
     wm_c    = _wm_cab(titulo_real, autor_real)
     wm_chap = _wm_chap(titulo_real, autor_real)
 
-    doc = BaseDocTemplate(buf, pagesize=A5,
+    doc = NumanciaDocTemplate(buf, pagesize=A5,
         leftMargin=0, rightMargin=0, topMargin=0, bottomMargin=0)
 
     fr_r = mk_frame(True); fr_v = mk_frame(False)
@@ -339,15 +339,16 @@ def generar_preview(texto: str, titulo: str, autor: str,
             caps_vistos += 1
             paginas_acum += 1.5
             # El primer capítulo ya cae en impar gracias a P10 (blanca verso epígrafe).
-            # Para los siguientes, asegurar impar con OddPageBreak.
+            # Para los siguientes, asegurar impar con _OddPageBreak (gestiona el salto
+            # automáticamente y, si hace falta, inserta página blanca antes).
             if caps_vistos == 1:
                 story.append(NextPageTemplate('chap'))
                 story.append(PageBreak())
             else:
                 story.append(NextPageTemplate('blanca'))
+                story.append(PageBreak())
                 story.append(_OddPageBreak())
                 story.append(NextPageTemplate('chap'))
-                story.append(PageBreak())
 
             # El frame especial 'chap' ya da el aire superior (25mm). Aquí solo
             # ponemos un pequeño aire visual antes del título.
@@ -646,7 +647,7 @@ def generar_preview(texto: str, titulo: str, autor: str,
 
         # Reset doc
         buf = io.BytesIO()
-        doc = BaseDocTemplate(buf, pagesize=A5,
+        doc = NumanciaDocTemplate(buf, pagesize=A5,
             leftMargin=0, rightMargin=0, topMargin=0, bottomMargin=0)
         fr_r = mk_frame(True); fr_v = mk_frame(False)
         doc.addPageTemplates([

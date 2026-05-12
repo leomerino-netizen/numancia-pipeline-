@@ -573,8 +573,9 @@ def cuerpo(story, bloques, S):
 
         if t == 'cap_titulo':
             # Convención editorial PRH/Penguin/Planeta: TODOS los capítulos
-            # abren SIEMPRE en página impar (recto). Si la página actual es par,
-            # se inserta automáticamente una blanca para forzar el siguiente recto.
+            # abren SIEMPRE en página impar (recto). El PageBreak salta a
+            # nueva página, y _OddPageBreak detecta si esa página es par
+            # y, en ese caso, fuerza otro salto para llegar a impar.
             story.append(NextPageTemplate('blank'))
             story.append(PageBreak())
             story.append(_OddPageBreak())
@@ -695,7 +696,7 @@ def generar_maqueta_completa(
     on_r = hdr_r(titulo_real)
     on_v = hdr_v(autor_real)
 
-    doc = BaseDocTemplate(buf, pagesize=A5,
+    doc = NumanciaDocTemplate(buf, pagesize=A5,
         leftMargin=0, rightMargin=0, topMargin=0, bottomMargin=0)
 
     fr_r = mk_frame(True); fr_v = mk_frame(False)
@@ -757,9 +758,9 @@ def _parse_texto(texto: str):
 
 class OddPageBreak(Flowable):
     """
-    Fuerza que el siguiente contenido comience en página impar (recto/derecha).
-    Si la próxima página sería par, inserta una página en blanco antes.
-    Convención editorial estándar PRH/Penguin/Planeta para capítulos.
+    DEPRECATED — mantener solo por compatibilidad con código antiguo.
+    Usar el nuevo _OddPageBreak (sentinel) que funciona vía afterFlowable
+    del DocTemplate.
     """
     width = 0
     height = 0
@@ -769,51 +770,81 @@ class OddPageBreak(Flowable):
 
 
 def _forzar_impar(story):
-    """
-    Inserta page breaks suficientes para que el siguiente contenido
-    aparezca en página impar. Se evalúa en tiempo de build.
-    """
-    # Estrategia simple: PageBreak siempre + un OddPageMarker que en build
-    # agregará otro PageBreak si quedó en par.
-    story.append(_OddBreakSentinel())
+    """Helper: añade un sentinel que el DocTemplate detectará."""
+    story.append(_OddPageBreak())
 
 
 class _OddPageBreak(Flowable):
     """
-    Si la página actual es PAR (verso), inserta un page break para que
-    el siguiente flowable (capítulo) caiga en página IMPAR (recto).
+    Sentinel marker para forzar página impar (recto).
+    
+    NO hace nada por sí mismo. La magia está en NumanciaDocTemplate.afterFlowable():
+    cuando el DocTemplate procesa este flowable, comprueba la página actual y
+    si es impar (es decir, el siguiente contenido caería en par) inyecta un
+    showPage() extra para que el contenido siguiente caiga en impar.
+    
+    USO típico (antes de un cap_titulo):
+        story.append(PageBreak())          # salta a la siguiente página
+        story.append(_OddPageBreak())      # si esa página es par, salta otra más
+        story.append(NextPageTemplate('chap'))
+        # ... contenido del capítulo ...
+    
+    Compatible con la implementación antigua: las llamadas existentes siguen
+    funcionando, pero ahora usando NumanciaDocTemplate en lugar de
+    BaseDocTemplate plano.
     """
     _ZeroSize = True
+    locChanger = 1   # ReportLab marca: este flowable cambia de localización
+    
     def __init__(self):
         Flowable.__init__(self)
         self.width = 0
         self.height = 0
 
     def wrap(self, aw, ah):
-        return (aw, 0)
-
-    def drawOn(self, canvas, x, y, _sW=0):
-        # Comprobar paridad de página actual
-        try:
-            pn = canvas.getPageNumber()
-        except:
-            pn = 1
-        # Si la página DONDE estamos imprimiendo es par, no necesitamos nada
-        # (el siguiente PageBreak nos llevará a impar).
-        # Si es impar, el siguiente PageBreak nos llevaría a par → forzamos otro
-        # Pero en este punto ya hemos tenido un PageBreak antes, así que:
-        # - Si pn es impar: ya estamos donde queremos
-        # - Si pn es par: necesitamos saltar una más
-        if pn % 2 == 0:
-            try:
-                canvas.showPage()
-            except: pass
+        return (0, 0)
 
     def draw(self):
         pass
 
 
+# Alias retrocompatible
 _OddBreakSentinel = _OddPageBreak
+
+
+# ── DocTemplate custom que respeta la convención de página impar ────────────
+class NumanciaDocTemplate(BaseDocTemplate):
+    """
+    Subclase de BaseDocTemplate que detecta los _OddPageBreak (sentinel)
+    y, cuando los procesa, comprueba la paridad de la página actual.
+    Si está en impar, inyecta un showPage extra para garantizar que el
+    siguiente contenido cae en página impar (recto/derecha).
+    
+    Convención editorial PRH/Penguin/Planeta: capítulos SIEMPRE en página
+    impar. Si la disposición natural deja el siguiente capítulo en par,
+    se inserta una página blanca automáticamente.
+    """
+    def afterFlowable(self, flowable):
+        """ReportLab llama esto tras renderizar cada flowable. self.page
+        es el número de la página actual donde se está renderizando.
+        
+        El sentinel _OddPageBreak garantiza que el siguiente flowable
+        empieza en página IMPAR (recto/derecha):
+        - El PageBreak previo en el story salta a página nueva
+        - El sentinel se procesa en esa nueva página
+        - Si esa página es PAR, fuerza otro salto vía handle_pageEnd/Begin
+          (que internamente llama a canv.showPage)
+        - Si ya es IMPAR, no hace nada
+        """
+        if isinstance(flowable, _OddPageBreak):
+            if self.page % 2 == 0:
+                try:
+                    # handle_pageEnd internamente hace canv.showPage()
+                    # No llamar canv.showPage() además, sería doble salto
+                    self.handle_pageEnd()
+                    self.handle_pageBegin()
+                except Exception as e:
+                    print(f'[odd_break] no se pudo forzar impar: {e}', flush=True)
 
 
 if __name__ == '__main__':

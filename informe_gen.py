@@ -26,6 +26,7 @@ DORADO_CL   = colors.HexColor('#E8DDB8')
 ROJO_ED     = colors.HexColor('#7A1F1F')
 VERDE_ED    = colors.HexColor('#1F4D2C')
 BLANCO      = colors.white
+GRIS_MEDIO  = colors.HexColor('#6B6B6B')  # color exacto pedido para Valoración nº
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 LOGO_PATH = next((p for p in [
@@ -159,6 +160,37 @@ def _cabecera(d):
     ]))
     return cab
 
+
+# ── Línea de Valoración nº (solo si viene número, debajo de cabecera) ─────────
+def _linea_valoracion(numero_presupuesto: str):
+    """
+    Renderiza 'Valoración nº XXXX' alineado a la derecha justo debajo del
+    bloque de cabecera "Editorial Numancia · Informe editorial" y ENCIMA
+    del título de la obra.
+    Si numero_presupuesto está vacío, devuelve None (NO añadir nada).
+    Estilo: serif Times-Roman, 9pt, gris medio #6B6B6B, alineado derecha.
+    """
+    num = (numero_presupuesto or '').strip()
+    if not num:
+        return None
+    # Escapar caracteres HTML por seguridad
+    num_esc = num.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+    p = Paragraph(
+        f'<font name="Times-Roman" size="9" color="#6B6B6B">Valoración nº {num_esc}</font>',
+        S('valnum','Times-Roman', 9, 11, GRIS_MEDIO, TA_RIGHT,
+          spaceBefore=2, spaceAfter=2)
+    )
+    t = Table([[p]], colWidths=[W_DOC])
+    t.setStyle(TableStyle([
+        ('LEFTPADDING',(0,0),(-1,-1), 0),
+        ('RIGHTPADDING',(0,0),(-1,-1), 12),
+        ('TOPPADDING',(0,0),(-1,-1), 3),
+        ('BOTTOMPADDING',(0,0),(-1,-1), 3),
+        ('ALIGN',(0,0),(-1,-1),'RIGHT'),
+    ]))
+    return t
+
+
 def _banda_meta(d):
     txt = (
         f'<font name="Helvetica-Bold" size="7.5" color="#A88838">ASESORA EDITORIAL</font>  '
@@ -271,20 +303,90 @@ def _bloque_veredicto(veredicto, justificacion):
     ]))
     return t
 
+
+# ── Footer en TODAS las páginas (con/sin Valoración nº) ──────────────────────
+def _hacer_footer_callback(numero_presupuesto: str):
+    """
+    Devuelve una función onPage que dibuja el footer en cada página.
+    Si numero_presupuesto NO está vacío, antepone 'Valoración nº XXX · '.
+    Estilo: gris #6B6B6B, 8pt, alineado a la izquierda del cuerpo del pie.
+    """
+    num = (numero_presupuesto or '').strip()
+
+    def _draw_footer(canvas, doc):
+        canvas.saveState()
+        # Posición del pie: centrado horizontalmente, sobre el borde inferior
+        # con margen suficiente para no chocar con el texto del documento
+        page_w, page_h = A4
+        margen_x = 18*mm
+        y_footer = 8*mm  # altura del pie sobre el borde inferior
+
+        # Texto del footer existente (corporativo + confidencial)
+        texto_corp = ('Editorial Numancia · Grupo Printcolorweb.com · '
+                      'C/ Numancia 187, planta -1 · 08034 Barcelona')
+        texto_conf = 'DOCUMENTO CONFIDENCIAL — USO INTERNO EXCLUSIVO'
+
+        # Si hay número, prefijo a la izquierda
+        if num:
+            num_esc = num.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+            prefijo = f'Valoración nº {num_esc} · '
+            canvas.setFont('Times-Italic', 8)
+            canvas.setFillColor(GRIS_MEDIO)
+            canvas.drawString(margen_x, y_footer + 6,
+                              prefijo + texto_corp)
+        else:
+            # Sin número: footer centrado como antes
+            canvas.setFont('Times-Italic', 7.5)
+            canvas.setFillColor(GRIS)
+            canvas.drawCentredString(page_w / 2, y_footer + 6, texto_corp)
+
+        # Línea inferior con DOCUMENTO CONFIDENCIAL
+        canvas.setFont('Helvetica', 6.5)
+        canvas.setFillColor(DORADO)
+        canvas.drawCentredString(page_w / 2, y_footer - 2, texto_conf)
+
+        canvas.restoreState()
+
+    return _draw_footer
+
+
 # ── Generador principal ───────────────────────────────────────────────────────
 def generar_informe(d: dict) -> bytes:
     buf = io.BytesIO()
+
+    # Leer número de valoración (puede venir vacío o no venir)
+    numero_presupuesto = (d.get('numero_presupuesto') or '').strip()
+    if numero_presupuesto:
+        print(f'[informe] numero_presupuesto={numero_presupuesto!r}', flush=True)
+
+    # Construir título PDF: añadir Valoración nº si está presente
+    titulo_pdf = f"Informe de lectura · {d.get('titulo','')}"
+    if numero_presupuesto:
+        titulo_pdf += f" · Valoración nº {numero_presupuesto}"
+
     doc = SimpleDocTemplate(buf, pagesize=A4,
         leftMargin=18*mm, rightMargin=18*mm,
-        topMargin=12*mm, bottomMargin=14*mm,
-        title=f"Informe de lectura · {d.get('titulo','')}",
+        topMargin=12*mm, bottomMargin=18*mm,  # +4mm en bottom para dejar sitio al footer
+        title=titulo_pdf,
         author='Editorial Numancia',
         subject=f"Informe editorial de {d.get('titulo','')}",
         creator='Editorial Numancia · Grupo Printcolorweb.com',
         producer='Editorial Numancia')
+
+    # Callback para footer en TODAS las páginas
+    footer_callback = _hacer_footer_callback(numero_presupuesto)
+
     story = []
 
     story.append(_cabecera(d))
+
+    # ── Valoración nº (solo si llega no vacío) ─────────────────────────────
+    # Debajo de la cabecera "Editorial Numancia · Informe de lectura" y
+    # ENCIMA del título de la obra. Alineado a la derecha.
+    linea_val = _linea_valoracion(numero_presupuesto)
+    if linea_val is not None:
+        story.append(linea_val)
+
     story.append(_banda_meta(d))
     story.append(Spacer(1, 10))
 
@@ -596,18 +698,16 @@ def generar_informe(d: dict) -> bytes:
 
         story.append(Spacer(1, 12))
 
-    # ── 10. Pie ──────────────────────────────────────────────────────────────
+    # ── 10. Pie de la última página (corporativo) ───────────────────────────
+    # NOTA: el footer en TODAS las páginas se dibuja vía onFirstPage/onLaterPages
+    # mediante _hacer_footer_callback. Aquí solo dejamos un pequeño bloque
+    # decorativo de cierre antes del footer automático.
     story.append(HRFlowable(width='100%', thickness=0.4, color=DORADO, spaceAfter=4))
-    story.append(Paragraph(
-        '<font name="Times-Italic" size="7.5" color="#888888">'
-        'Editorial Numancia · Grupo Printcolorweb.com · C/ Numancia 187, planta -1 · 08034 Barcelona'
-        '</font><br/>'
-        '<font name="Helvetica" size="6.5" color="#A88838" >'
-        'DOCUMENTO CONFIDENCIAL — USO INTERNO EXCLUSIVO'
-        '</font>',
-        S('pie','Helvetica',7.5,10,GRIS,TA_CENTER)))
 
-    doc.build(story)
+    # Construir el PDF con el callback de footer en TODAS las páginas
+    doc.build(story,
+              onFirstPage=footer_callback,
+              onLaterPages=footer_callback)
 
     pdf_bytes = buf.getvalue()
     if FAVICON_PATH:

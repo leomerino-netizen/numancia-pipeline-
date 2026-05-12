@@ -74,6 +74,25 @@ def _find(candidates: list) -> str:
             return p
     return ''
 
+
+# ── Normalizador de slug de asesora ──────────────────────────────────────────
+def _normalizar_asesora_slug(asesora: str) -> str:
+    """
+    Normaliza la entrada (slug o nombre completo) al slug canónico.
+    Lovable a veces manda 'laura' y otras 'Laura Vega Ugarte' — los aceptamos todos.
+    """
+    if not asesora:
+        return 'laura'
+    s = str(asesora).strip().lower()
+    if s in {'laura', 'debora', 'juan', 'nancy'}:
+        return s
+    if 'laura' in s:  return 'laura'
+    if 'débora' in s or 'debora' in s: return 'debora'
+    if 'juan'  in s:  return 'juan'
+    if 'nancy' in s:  return 'nancy'
+    return 'laura'
+
+
 LOGO_PATH = _find([
     'fotos/logo_numancia.png',
     'logo_numancia.png',
@@ -81,13 +100,17 @@ LOGO_PATH = _find([
     'Fotos/logotipo-editorial-numancia-apaisado-color-hexadecimal.png',
 ])
 
+# ── Catálogo de asesoras ─────────────────────────────────────────────────────
+# Nota: la clave 'foto' busca PRIMERO los PNG circulares (laura-circ.png) que
+# usa el preview, y cae a las fotos cuadradas antiguas si no las encuentra.
 ASESORAS = {
     'laura': {
         'nombre':        'Laura Vega Ugarte',
         'iniciales':     'LV',
         'ext':           '282-283',
         'email':         'laura.vega@editorialnumancia.com',
-        'foto':          _find(['fotos/laura.jpg', 'laura.jpg',
+        'foto':          _find(['fotos/laura-circ.png', 'fotos/laura.jpg',
+                                'laura.jpg',
                                 'laura-asesora-editorial-editorial-numancia.jpg']),
         'calendario':    'AGENDAR LLAMADA CON LAURA VEGA UGARTE',
         'calendario_url':'https://printcolorweb.zohobookings.eu/#/laura',
@@ -97,7 +120,8 @@ ASESORAS = {
         'iniciales':     'DT',
         'ext':           '287',
         'email':         'debora.tomas@editorialnumancia.com',
-        'foto':          _find(['fotos/debora.jpg', 'debora.jpg',
+        'foto':          _find(['fotos/debora-circ.png', 'fotos/debora.jpg',
+                                'debora.jpg',
                                 'debora-asesora-editorial-numancia.jpg']),
         'calendario':    'AGENDAR LLAMADA CON DÉBORA TÓMAS',
         'calendario_url':'https://printcolorweb.zohobookings.eu/#/debora',
@@ -107,7 +131,8 @@ ASESORAS = {
         'iniciales':     'JM',
         'ext':           '289',
         'email':         'juan.munoz@editorialnumancia.com',
-        'foto':          _find(['fotos/juan.jpg', 'juan.jpg',
+        'foto':          _find(['fotos/juan-circ.png', 'fotos/juan.jpg',
+                                'juan.jpg',
                                 'juan-nunoz-maquetaror-editorial-numancia.jpg']),
         'calendario':    'AGENDAR LLAMADA CON JUAN MUÑOZ',
         'calendario_url':'https://printcolorweb.zohobookings.eu/#/juan',
@@ -117,19 +142,68 @@ ASESORAS = {
         'iniciales':     'NA',
         'ext':           '285',
         'email':         'info@editorialnumancia.com',
-        'foto':          _find(['fotos/nancy.jpg', 'nancy.jpg', 'Nancy.jpg']),
+        'foto':          _find(['fotos/nancy-circ.png', 'fotos/nancy.jpg',
+                                'nancy.jpg', 'Nancy.jpg']),
         'calendario':    'AGENDAR LLAMADA CON NANCY',
         'calendario_url':'https://printcolorweb.zohobookings.eu/#/nancy',
     },
 }
 
 def _resolver_asesora(key: str) -> dict:
-    """Acepta nombre completo o clave corta."""
-    k = key.lower().strip()
-    for slug, datos in ASESORAS.items():
-        if slug in k or datos['nombre'].lower() in k:
-            return datos
-    return list(ASESORAS.values())[0]
+    """Acepta nombre completo o clave corta. Usa el normalizador robusto."""
+    slug = _normalizar_asesora_slug(key)
+    return ASESORAS.get(slug, ASESORAS['laura'])
+
+
+# ── Helper: convertir cualquier foto a PNG circular ─────────────────────────
+def _aplicar_mascara_circular(ruta_foto: str, diametro_px: int = 400) -> bytes:
+    """
+    Toma una foto (cualquier formato/proporción) y devuelve un PNG circular
+    con fondo transparente. Si la foto ya parece circular (tiene canal alpha
+    y es cuadrada), la devuelve tal cual.
+    
+    Útil para mostrar fotos rectangulares como avatares circulares uniformes
+    en el presupuesto, independientemente del archivo origen.
+    """
+    from PIL import Image as PILImage, ImageDraw
+    
+    with PILImage.open(ruta_foto) as im:
+        # Convertir a RGBA si no lo está
+        if im.mode != 'RGBA':
+            im = im.convert('RGBA')
+        
+        iw, ih = im.size
+        
+        # Si la imagen ya parece un círculo (cuadrada con alpha activo en bordes),
+        # la devolvemos sin tocar para no perder calidad
+        ya_circular = (iw == ih and ruta_foto.lower().endswith('-circ.png'))
+        if ya_circular:
+            buf = io.BytesIO()
+            im.save(buf, format='PNG')
+            return buf.getvalue()
+        
+        # Recortar a cuadrado centrado
+        if iw > ih:
+            left = (iw - ih) // 2
+            im = im.crop((left, 0, left + ih, ih))
+        elif ih > iw:
+            top = (ih - iw) // 2
+            im = im.crop((0, top, iw, top + iw))
+        
+        # Redimensionar al diámetro objetivo
+        im = im.resize((diametro_px, diametro_px), PILImage.LANCZOS)
+        
+        # Aplicar máscara circular
+        mascara = PILImage.new('L', (diametro_px, diametro_px), 0)
+        draw = ImageDraw.Draw(mascara)
+        draw.ellipse((0, 0, diametro_px, diametro_px), fill=255)
+        
+        resultado = PILImage.new('RGBA', (diametro_px, diametro_px), (255, 255, 255, 0))
+        resultado.paste(im, (0, 0), mascara)
+        
+        buf = io.BytesIO()
+        resultado.save(buf, format='PNG')
+        return buf.getvalue()
 
 
 # ── Helpers de estilo ────────────────────────────────────────────────────────
@@ -724,9 +798,9 @@ def _pagina2(d: dict, asesora: dict) -> list:
         ('VALIGN',(0,0),(-1,-1),'TOP'),
     ]))
 
-    # Caja asesora con foto circular
+    # ─── Caja asesora con foto CIRCULAR ───────────────────────────────────────
     foto_path = asesora.get('foto', '')
-    foto_existe = os.path.isfile(foto_path)
+    foto_existe = bool(foto_path) and os.path.isfile(foto_path)
 
     ase_inner = [
         Paragraph('TU ASESORA',
@@ -735,18 +809,16 @@ def _pagina2(d: dict, asesora: dict) -> list:
     ]
 
     if foto_existe:
-        from PIL import Image as PILImage
         try:
-            with PILImage.open(foto_path) as im:
-                iw, ih = im.size
-            ratio = iw / ih
-            h_foto = 40*mm
-            w_foto = h_foto * ratio
-            w_max = WR - 16*mm
-            if w_foto > w_max:
-                w_foto = w_max
-                h_foto = w_foto / ratio
-            img = Image(foto_path, width=w_foto, height=h_foto)
+            # Generar/usar foto circular (PNG con transparencia, tamaño 32mm)
+            png_bytes = _aplicar_mascara_circular(foto_path, diametro_px=400)
+            img_buf = io.BytesIO(png_bytes)
+            
+            # Tamaño del círculo en el PDF
+            tam_foto = 32 * mm
+            img = Image(img_buf, width=tam_foto, height=tam_foto)
+            
+            # Centrar la foto en su celda
             t_foto = Table([[img]], colWidths=[WR - 16*mm])
             t_foto.setStyle(TableStyle([
                 ('ALIGN',        (0,0),(-1,-1),'CENTER'),
@@ -757,10 +829,15 @@ def _pagina2(d: dict, asesora: dict) -> list:
                 ('BOTTOMPADDING',(0,0),(-1,-1),0),
             ]))
             ase_inner.append(t_foto)
-        except Exception:
+            print(f'[presupuesto] foto circular OK: {foto_path}', flush=True)
+        except Exception as e:
+            print(f'[presupuesto] error procesando foto circular ({e}), '
+                  f'fallback a iniciales', flush=True)
             ase_inner.append(Paragraph(asesora["iniciales"],
                 S('ini','Helvetica-Bold',24,30,AZUL,TA_CENTER)))
     else:
+        print(f'[presupuesto] sin foto disponible para asesora, '
+              f'usando iniciales {asesora["iniciales"]!r}', flush=True)
         ase_inner.append(Paragraph(asesora["iniciales"],
             S('ini2','Helvetica-Bold',24,30,AZUL,TA_CENTER)))
 

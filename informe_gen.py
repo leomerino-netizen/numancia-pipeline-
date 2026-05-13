@@ -244,6 +244,81 @@ def _ficha(rows):
     ]))
     return t
 
+
+# ── Tabla de Público Objetivo (SIEMPRE muestra todas las filas) ──────────────
+def _tabla_publico_objetivo(lector_primario: str,
+                             lector_secundario: str,
+                             comparable: str,
+                             precio: str = ''):
+    """
+    Renderiza la tabla de "Público objetivo" con estilo corporativo del
+    informe (cabecera dorada + filas alternas).
+    
+    A DIFERENCIA de _ficha(), esta tabla SIEMPRE muestra TODAS las filas,
+    incluso si los valores están vacíos. En ese caso la celda derecha
+    queda en blanco (sin '—', sin 'N/D').
+    
+    Anchos: ~35% etiqueta · ~65% valor (sobre W_DOC).
+    Padding: 4pt vertical, 6pt horizontal.
+    Tipografía: serif Times-Roman 11pt (cuerpo), Helvetica 7pt (etiquetas).
+    """
+    # Sanitizar (None → '', strip)
+    lp = (lector_primario or '').strip()
+    ls = (lector_secundario or '').strip()
+    cp = (comparable or '').strip()
+    pr = (precio or '').strip()
+
+    # Cabecera de la tabla (estilo idéntico al de _tabla_evaluacion)
+    cab = [
+        Paragraph('<font name="Helvetica-Bold" size="7" color="#A88838">CATEGORÍA</font>',
+                  S('puh1','Helvetica-Bold',7,10,DORADO,letterSpacing=1)),
+        Paragraph('<font name="Helvetica-Bold" size="7" color="#A88838">DESCRIPCIÓN</font>',
+                  S('puh2','Helvetica-Bold',7,10,DORADO,letterSpacing=1)),
+    ]
+
+    def _fila(label: str, valor: str):
+        return [
+            Paragraph(
+                f'<font name="Helvetica-Bold" size="8.5" color="#3A3A3A">{label}</font>',
+                S('pul','Helvetica-Bold',8.5,12,GRIS_OSC,letterSpacing=0.5)
+            ),
+            Paragraph(
+                f'<font name="Times-Roman" size="11" color="#1A1A1A">{valor}</font>'
+                if valor else '',
+                S('puv','Times-Roman',11,13.2,NEGRO,TA_JUSTIFY)
+            ),
+        ]
+
+    rows = [cab,
+            _fila('Lector primario',   lp),
+            _fila('Lector secundario', ls),
+            _fila('Comparable',        cp)]
+    # Precio sugerido: añadir como 4ª fila (también siempre visible)
+    rows.append(_fila('Precio sugerido', pr))
+
+    col1 = W_DOC * 0.35
+    col2 = W_DOC * 0.65
+    t = Table(rows, colWidths=[col1, col2])
+    t.setStyle(TableStyle([
+        # Cabecera dorada (idéntica al resto del informe)
+        ('BACKGROUND',  (0,0),(-1,0),  CREMA),
+        ('LINEABOVE',   (0,1),(-1,1),  0.6, DORADO),
+        # Fondo gris MUY claro en la columna izquierda (etiquetas) — para diferenciar
+        ('BACKGROUND',  (0,1),(0,-1),  colors.HexColor('#F5F2EC')),
+        # Bordes y líneas
+        ('LINEBELOW',   (0,0),(-1,-1), 0.3, GRIS_LINEA),
+        # Padding (vertical 4pt, horizontal 6pt como pide el briefing)
+        ('LEFTPADDING', (0,0),(-1,-1), 6),
+        ('RIGHTPADDING',(0,0),(-1,-1), 6),
+        ('TOPPADDING',  (0,0),(-1,-1), 4),
+        ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        # Alineación vertical superior (mejor cuando hay textos largos)
+        ('VALIGN',      (0,0),(-1,-1), 'TOP'),
+        # Altura mínima de fila para que las celdas vacías no queden colapsadas
+        ('MINSIZE',     (0,1),(-1,-1), 18),
+    ]))
+    return t
+
 def _tabla_evaluacion(eval_list):
     rows = [[
         Paragraph('<font name="Helvetica-Bold" size="7" color="#A88838" >CRITERIO</font>',
@@ -437,15 +512,22 @@ def generar_informe(d: dict) -> bytes:
         d.get('veredicto_texto','')))
     story.append(Spacer(1, 12))
 
-    story.append(_seccion('Encaje en el mercado'))
+    # ── Público objetivo (SIEMPRE visible, aunque vengan campos vacíos) ─────
+    # Lectura tolerante: acepta `publico.X` anidado, `X` en raíz, null o ausente
+    pub_nested = d.get('publico') if isinstance(d.get('publico'), dict) else {}
+    lector_primario   = (pub_nested.get('lector_primario')   or d.get('lector_primario')   or '')
+    lector_secundario = (pub_nested.get('lector_secundario') or d.get('lector_secundario') or '')
+    comparable        = (pub_nested.get('comparable')        or d.get('comparable')        or '')
+    precio            = (pub_nested.get('precio')            or d.get('precio')            or '')
+
+    story.append(_seccion('Público objetivo'))
     story.append(Spacer(1, 4))
-    pub = _ficha([
-        ('Lector primario',   d.get('lector_primario','')),
-        ('Lector secundario', d.get('lector_secundario','')),
-        ('Comparables',       d.get('comparable','')),
-        ('Precio sugerido',   d.get('precio','')),
-    ])
-    if pub: story.append(pub)
+    story.append(_tabla_publico_objetivo(
+        lector_primario   = lector_primario,
+        lector_secundario = lector_secundario,
+        comparable        = comparable,
+        precio            = precio,
+    ))
     story.append(Spacer(1, 10))
 
     if d.get('notas'):

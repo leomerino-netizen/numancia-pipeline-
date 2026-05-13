@@ -101,8 +101,6 @@ LOGO_PATH = _find([
 ])
 
 # ── Catálogo de asesoras ─────────────────────────────────────────────────────
-# Nota: la clave 'foto' busca PRIMERO los PNG circulares (laura-circ.png) que
-# usa el preview, y cae a las fotos cuadradas antiguas si no las encuentra.
 ASESORAS = {
     'laura': {
         'nombre':        'Laura Vega Ugarte',
@@ -150,57 +148,34 @@ ASESORAS = {
 }
 
 def _resolver_asesora(key: str) -> dict:
-    """Acepta nombre completo o clave corta. Usa el normalizador robusto."""
     slug = _normalizar_asesora_slug(key)
     return ASESORAS.get(slug, ASESORAS['laura'])
 
 
 # ── Helper: convertir cualquier foto a PNG circular ─────────────────────────
 def _aplicar_mascara_circular(ruta_foto: str, diametro_px: int = 400) -> bytes:
-    """
-    Toma una foto (cualquier formato/proporción) y devuelve un PNG circular
-    con fondo transparente. Si la foto ya parece circular (tiene canal alpha
-    y es cuadrada), la devuelve tal cual.
-    
-    Útil para mostrar fotos rectangulares como avatares circulares uniformes
-    en el presupuesto, independientemente del archivo origen.
-    """
     from PIL import Image as PILImage, ImageDraw
-    
     with PILImage.open(ruta_foto) as im:
-        # Convertir a RGBA si no lo está
         if im.mode != 'RGBA':
             im = im.convert('RGBA')
-        
         iw, ih = im.size
-        
-        # Si la imagen ya parece un círculo (cuadrada con alpha activo en bordes),
-        # la devolvemos sin tocar para no perder calidad
         ya_circular = (iw == ih and ruta_foto.lower().endswith('-circ.png'))
         if ya_circular:
             buf = io.BytesIO()
             im.save(buf, format='PNG')
             return buf.getvalue()
-        
-        # Recortar a cuadrado centrado
         if iw > ih:
             left = (iw - ih) // 2
             im = im.crop((left, 0, left + ih, ih))
         elif ih > iw:
             top = (ih - iw) // 2
             im = im.crop((0, top, iw, top + iw))
-        
-        # Redimensionar al diámetro objetivo
         im = im.resize((diametro_px, diametro_px), PILImage.LANCZOS)
-        
-        # Aplicar máscara circular
         mascara = PILImage.new('L', (diametro_px, diametro_px), 0)
         draw = ImageDraw.Draw(mascara)
         draw.ellipse((0, 0, diametro_px, diametro_px), fill=255)
-        
         resultado = PILImage.new('RGBA', (diametro_px, diametro_px), (255, 255, 255, 0))
         resultado.paste(im, (0, 0), mascara)
-        
         buf = io.BytesIO()
         resultado.save(buf, format='PNG')
         return buf.getvalue()
@@ -213,50 +188,25 @@ def S(name, font='Helvetica', size=8, leading=11, color=NEGRO,
                           textColor=color, alignment=align, **kw)
 
 
-def _sec(txt, color=AZUL, w=None):
-    cw = w or W_DOC
-    t = Table([[Paragraph(txt,
-        S('sh', 'Helvetica-Bold', 7.5, 10, BLANCO))]],
-        colWidths=[cw])
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), color),
-        ('LEFTPADDING',  (0,0), (-1,-1), 8),
-        ('TOPPADDING',   (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING',(0,0), (-1,-1), 5),
-    ]))
-    return t
-
-
-def _kv(rows, col1=42*mm, w=None):
-    cw = w or W_DOC
-    data = [[Paragraph(k, S('hb','Helvetica-Bold',7.5,11,AZUL)),
-             Paragraph(v, S('hn','Helvetica',7.5,11,NEGRO))] for k, v in rows]
-    t = Table(data, colWidths=[col1, cw - col1])
-    t.setStyle(TableStyle([
-        ('ROWBACKGROUNDS', (0,0), (-1,-1), [AZUL_CL, BLANCO]),
-        ('LEFTPADDING',  (0,0), (-1,-1), 6),
-        ('RIGHTPADDING', (0,0), (-1,-1), 6),
-        ('TOPPADDING',   (0,0), (-1,-1), 4),
-        ('BOTTOMPADDING',(0,0), (-1,-1), 4),
-        ('GRID', (0,0), (-1,-1), 0.3, AZUL_LINEA),
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-    ]))
-    return t
-
-
 def _fmt_eur(v: float) -> str:
     return f'EUR {v:,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
 
 
 # ── Cabecera compartida (p1 y p2) ────────────────────────────────────────────
-def _cabecera(asesora: dict) -> list:
+def _cabecera(asesora: dict, con_logo: bool = True) -> list:
+    """
+    Cabecera del documento.
+    - con_logo=True  (p1): logo + datos de contacto. Línea decorativa azul abajo.
+    - con_logo=False (p2+): solo "Editorial Numancia" en texto + datos de contacto.
+      Mantiene la línea azul para coherencia visual.
+    """
     items = []
 
     logo_h = 12 * mm
     logo_w = logo_h * (1621 / 337)
     logo_w = min(logo_w, W_DOC * 0.52)
 
-    if os.path.isfile(LOGO_PATH):
+    if con_logo and os.path.isfile(LOGO_PATH):
         logo_img = Image(LOGO_PATH, width=logo_w, height=logo_h)
         logo_cell = Table([[logo_img]], colWidths=[logo_w + 4*mm])
         logo_cell.setStyle(TableStyle([
@@ -268,6 +218,7 @@ def _cabecera(asesora: dict) -> list:
             ('BOTTOMPADDING',(0,0),(-1,-1),0),
         ]))
     else:
+        # Fallback / página secundaria: texto en lugar de logo
         logo_cell = Paragraph(
             'Editorial Numancia',
             S('lf','Helvetica-Bold',13,16,AZUL))
@@ -294,7 +245,6 @@ def _cabecera(asesora: dict) -> list:
     return items
 
 
-# ── Bloque asesora (cabecera secundaria) ─────────────────────────────────────
 def _bloque_asesora_header(num: str, fecha: str, asesora: dict) -> Table:
     left = Paragraph(
         f'PROPUESTA EDITORIAL '
@@ -318,7 +268,6 @@ def _bloque_asesora_header(num: str, fecha: str, asesora: dict) -> Table:
     return t
 
 
-# ── Pie de página ─────────────────────────────────────────────────────────────
 def _pie() -> list:
     items = []
     items.append(HRFlowable(width='100%', thickness=2.5,
@@ -341,30 +290,23 @@ def _pie() -> list:
 
 # ── Bloque AMORTIZACIÓN (marketiniano) ───────────────────────────────────────
 def _bloque_amortizacion(total_final: float, cantidad: int) -> list:
-    """
-    Calcula y maqueta el bloque marketiniano de amortización vía Librería
-    Numancia (PVP 19,90 € + 4% IVA · 100% para el autor).
-    """
     PVP_BASE = 19.90
     IVA      = 0.04
-    pvp_autor = round(PVP_BASE * (1 + IVA), 2)        # 20,70 €
+    pvp_autor = round(PVP_BASE * (1 + IVA), 2)
     libros    = math.ceil(total_final / pvp_autor) if pvp_autor else 0
-    libros    = min(libros, max(cantidad, libros))    # nunca más que la tirada en el mensaje principal
+    libros    = min(libros, max(cantidad, libros))
     pct       = min(100, (libros / cantidad) * 100) if cantidad else 0
     restantes = max(0, cantidad - libros)
     beneficio_si_vende_todo = round(restantes * pvp_autor, 2)
 
     items = []
-
-    # Título de sección
-    items.append(Paragraph(
+    titulo_amort = Paragraph(
         'Amortiza tu publicación en la Librería Numancia',
-        S('amt','Times-BoldItalic',13,17,AZUL,spaceBefore=4,spaceAfter=4)))
-    items.append(Paragraph(
+        S('amt','Times-BoldItalic',13,17,AZUL,spaceBefore=4,spaceAfter=4))
+    subtitulo_amort = Paragraph(
         '100 % de las ventas para el autor · PVP 19,90 € (IVA 4 % incluido)',
-        S('amsub','Times-Italic',8,12,GRIS,spaceBefore=0,spaceAfter=8)))
+        S('amsub','Times-Italic',8,12,GRIS,spaceBefore=0,spaceAfter=8))
 
-    # Caja hero con el número grande
     hero_left = [
         Paragraph('VENDIENDO SOLO',
                   S('amh1','Helvetica-Bold',7.5,11,BLANCO)),
@@ -400,9 +342,11 @@ def _bloque_amortizacion(total_final: float, cantidad: int) -> list:
         ('BOTTOMPADDING',(0,0),(-1,-1), 12),
         ('VALIGN',       (0,0),(-1,-1),'MIDDLE'),
     ]))
-    items.append(t_hero)
 
-    # Mini-tira inferior: beneficio si vende toda la tirada
+    # KeepTogether: título + subtítulo + hero viajan SIEMPRE juntos.
+    # Si no caben en lo que queda de página, saltan los tres juntos a la siguiente.
+    items.append(KeepTogether([titulo_amort, subtitulo_amort, t_hero]))
+
     if restantes > 0:
         bonus = Table([[
             Paragraph(
@@ -425,11 +369,94 @@ def _bloque_amortizacion(total_final: float, cantidad: int) -> list:
     return items
 
 
+# ── Bloque RECOMPRA de ejemplares (nuevo · 13-05-2026) ──────────────────────
+def _bloque_recompra(precio_unitario: float, cantidad: int) -> list:
+    """
+    Bloque informativo: durante 12 meses desde la aceptación de la propuesta,
+    el autor puede pedir reimpresiones (>=25 ejemplares) al mismo precio unitario.
+    El ejemplo usa los valores reales del presupuesto: una recompra-tipo de
+    aproximadamente la mitad de la tirada inicial, redondeada a múltiplo de 25
+    (mínimo 25), y muestra el cálculo total en euros.
+    Estilo sobrio: título serif azul corporativo + cuerpo serif negro.
+    Sin recuadros ni fondos. Pensado para ir tras el bloque de amortización.
+    """
+    items = []
+    items.append(Spacer(1, 6))
+
+    # Cantidad de ejemplo: ~50% de la tirada inicial, redondeado a múltiplo de 25,
+    # con mínimo 25. Así el ejemplo siempre es realista respecto al presupuesto.
+    ejemplo_uds = max(25, round(cantidad / 50) * 25)
+    importe_ejemplo = round(ejemplo_uds * precio_unitario, 2)
+
+    titulo = Paragraph(
+        'Servicio de recompra de ejemplares',
+        S('rc_tit', 'Times-Bold', 11, 15, AZUL, spaceBefore=2, spaceAfter=6))
+
+    cuerpo = Paragraph(
+        f'Durante los <b>12 meses</b> posteriores a la aceptación de esta propuesta, '
+        f'el autor puede solicitar reimpresiones adicionales a partir de '
+        f'<b>25 ejemplares</b> al mismo precio unitario de la tirada inicial.',
+        S('rc_p1', 'Times-Roman', 9, 12, NEGRO, TA_JUSTIFY, spaceAfter=4))
+
+    ejemplo = Paragraph(
+        f'<i>Ejemplo aplicado a tu presupuesto:</i> si dentro de unos meses decides '
+        f'reimprimir <b>{ejemplo_uds} ejemplares más</b>, pagarás '
+        f'<b>{ejemplo_uds} × {_fmt_eur(precio_unitario)} = {_fmt_eur(importe_ejemplo)}</b>, '
+        f'manteniendo el mismo precio unitario que tu tirada inicial de '
+        f'<b>{cantidad} ejemplares</b>, sin recargo por tirada corta.',
+        S('rc_p2', 'Times-Roman', 9, 12, NEGRO, TA_JUSTIFY, spaceAfter=4))
+
+    ventaja = Paragraph(
+        '<b>Ventaja:</b> no necesitas almacenar stock y conservas el precio reducido '
+        'de la tirada grande durante todo el primer año.',
+        S('rc_p3', 'Times-Roman', 9, 12, NEGRO, TA_JUSTIFY))
+
+    # KeepTogether para que el bloque no se parta entre páginas
+    items.append(KeepTogether([titulo, cuerpo, ejemplo, ventaja]))
+    return items
+
+
+# ── Bloque NOTAS ADICIONALES (opcional · 13-05-2026) ────────────────────────
+def _bloque_notas_adicionales(texto: str) -> list:
+    """
+    Bloque opcional al final del presupuesto con notas libres de la asesora.
+    Solo se renderiza si `texto` no está vacío. Respeta saltos de línea.
+    """
+    texto = (texto or '').strip()
+    if not texto:
+        return []
+
+    items = []
+    items.append(Spacer(1, 6))
+
+    titulo = Paragraph(
+        'Notas adicionales',
+        S('na_tit', 'Times-Bold', 11, 15, AZUL, spaceBefore=2, spaceAfter=6))
+
+    # Cada salto de línea doble (párrafo) o simple (línea) se respeta
+    # convirtiendo \n a <br/> dentro de un único Paragraph.
+    # Escapamos caracteres HTML peligrosos.
+    txt_esc = (texto.replace('&', '&amp;')
+                    .replace('<', '&lt;')
+                    .replace('>', '&gt;'))
+    txt_html = txt_esc.replace('\n', '<br/>')
+
+    cuerpo = Paragraph(
+        txt_html,
+        S('na_body', 'Times-Roman', 9, 12, NEGRO, TA_JUSTIFY))
+
+    # KeepTogether de título + cuerpo para que el título no quede huérfano.
+    # Si el cuerpo es muy largo, ReportLab partirá el cuerpo conservando el título arriba.
+    items.append(KeepTogether([titulo, cuerpo]))
+    return items
+
+
 # ── PÁGINA 1 ─────────────────────────────────────────────────────────────────
 def _pagina1(d: dict, asesora: dict) -> list:
     story = []
 
-    story += _cabecera(asesora)
+    # Logo + datos de contacto en la cabecera de la PRIMERA página
+    story += _cabecera(asesora, con_logo=True)
     story.append(_bloque_asesora_header(d['num_presupuesto'], d['fecha'], asesora))
     story.append(Spacer(1, 6))
 
@@ -639,7 +666,7 @@ def _pagina1(d: dict, asesora: dict) -> list:
     story.append(Spacer(1, 8))
 
     story.append(Paragraph(
-        'Continúa en la página 2 para conocer cómo aceptar el presupuesto, '
+        'Continúa en la página siguiente para conocer cómo aceptar el presupuesto, '
         'los detalles del proceso y agendar una llamada gratuita con tu asesora.',
         S('np','Times-Italic',7.5,11,GRIS,TA_CENTER,spaceBefore=4)))
 
@@ -651,7 +678,8 @@ def _pagina1(d: dict, asesora: dict) -> list:
 # ── PÁGINA 2 ─────────────────────────────────────────────────────────────────
 def _pagina2(d: dict, asesora: dict) -> list:
     story = []
-    story += _cabecera(asesora)
+    # SIN LOGO en la página 2 (igual que el informe editorial)
+    story += _cabecera(asesora, con_logo=False)
     story.append(_bloque_asesora_header(d['num_presupuesto'], d['fecha'], asesora))
     story.append(Spacer(1, 10))
 
@@ -798,7 +826,6 @@ def _pagina2(d: dict, asesora: dict) -> list:
         ('VALIGN',(0,0),(-1,-1),'TOP'),
     ]))
 
-    # ─── Caja asesora con foto CIRCULAR ───────────────────────────────────────
     foto_path = asesora.get('foto', '')
     foto_existe = bool(foto_path) and os.path.isfile(foto_path)
 
@@ -810,15 +837,10 @@ def _pagina2(d: dict, asesora: dict) -> list:
 
     if foto_existe:
         try:
-            # Generar/usar foto circular (PNG con transparencia, tamaño 32mm)
             png_bytes = _aplicar_mascara_circular(foto_path, diametro_px=400)
             img_buf = io.BytesIO(png_bytes)
-            
-            # Tamaño del círculo en el PDF
             tam_foto = 32 * mm
             img = Image(img_buf, width=tam_foto, height=tam_foto)
-            
-            # Centrar la foto en su celda
             t_foto = Table([[img]], colWidths=[WR - 16*mm])
             t_foto.setStyle(TableStyle([
                 ('ALIGN',        (0,0),(-1,-1),'CENTER'),
@@ -870,23 +892,24 @@ def _pagina2(d: dict, asesora: dict) -> list:
     story.append(t_bottom)
     story.append(Spacer(1, 12))
 
-    # ── BLOQUE AMORTIZACIÓN MARKETINIANO (cierre del documento) ──
+    # ── BLOQUE AMORTIZACIÓN MARKETINIANO ────────────────────────────────────
     story.extend(_bloque_amortizacion(d['_total_final'], d['cantidad']))
     story.append(Spacer(1, 8))
 
-    # Página 2 de 2
-    story.append(Paragraph('Página 2 de 2',
-        S('pag','Helvetica',6.5,9,GRIS,TA_CENTER,spaceBefore=4)))
-    story.append(Spacer(1, 4))
+    # ── BLOQUE SERVICIO DE RECOMPRA (nuevo · 13-05-2026) ────────────────────
+    story.extend(_bloque_recompra(d['precio_descuento'], d['cantidad']))
+
+    # ── BLOQUE NOTAS ADICIONALES (opcional · 13-05-2026) ────────────────────
+    # Solo se renderiza si llega texto en d['notas_adicionales'].
+    story.extend(_bloque_notas_adicionales(d.get('notas_adicionales', '')))
+
+    story.append(Spacer(1, 8))
     story.extend(_pie())
     return story
 
 
 # ── Función principal ─────────────────────────────────────────────────────────
 def generar_presupuesto(d: dict) -> bytes:
-    """
-    Recibe dict con los datos del presupuesto y devuelve bytes del PDF.
-    """
     asesora = _resolver_asesora(d.get('asesora', 'laura'))
 
     pm = d.get('precio_maquetacion', 0)
@@ -922,7 +945,7 @@ def generar_presupuesto(d: dict) -> bytes:
 if __name__ == '__main__':
     datos = {
         'num_presupuesto': '10212',
-        'fecha':           '25 de abril de 2026',
+        'fecha':           '13 de mayo de 2026',
         'asesora':         'laura',
         'cliente':         'Sara Libro Test',
         'obra':            'Sara',
@@ -941,9 +964,12 @@ if __name__ == '__main__':
         'encuadernacion': 'fresada',
         'lomo':       '10mm',
         'color_interior': 'B/N',
+        # Nuevo campo opcional: si está vacío, no se renderiza el bloque.
+        'notas_adicionales': '',
     }
     pdf_bytes = generar_presupuesto(datos)
     out = '/mnt/user-data/outputs/presupuesto_test.pdf'
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, 'wb') as f:
         f.write(pdf_bytes)
     print(f'PDF generado: {out} ({len(pdf_bytes)//1024} KB)')

@@ -48,6 +48,44 @@ def S(name, font='Helvetica', size=9, leading=12, color=NEGRO, align=TA_LEFT, **
     return ParagraphStyle(name, fontName=font, fontSize=size, leading=leading,
                           textColor=color, alignment=align, **kw)
 
+
+# ── Capitalización inteligente de nombres ─────────────────────────────────────
+# Capitaliza nombre y apellidos respetando partículas españolas en minúscula:
+# "manuel muñoz" → "Manuel Muñoz"
+# "MARÍA DEL CARMEN DE LA TORRE" → "María del Carmen de la Torre"
+# "j. r. r. tolkien" → "J. R. R. Tolkien"
+_PARTICULAS = {'de', 'del', 'la', 'las', 'los', 'y', 'e', 'da', 'do', 'dos',
+                'das', 'di', 'van', 'von', 'der', 'den'}
+
+def _capitalizar_nombre(nombre: str) -> str:
+    if not nombre:
+        return ''
+    s = str(nombre).strip()
+    if not s:
+        return ''
+    # No tocar si ya viene en formato correcto (mayúsculas + minúsculas mezcladas
+    # y al menos una palabra empieza por mayúscula): asumimos que es deliberado.
+    # Sí tocar si está TODO EN MAYÚSCULAS o todo en minúsculas.
+    if not (s.isupper() or s.islower()):
+        # Ya tiene formato mixto: respetar pero asegurar primera letra de cada
+        # palabra significativa esté en mayúscula
+        pass
+    palabras = s.split()
+    resultado = []
+    for i, p in enumerate(palabras):
+        p_low = p.lower()
+        # Partículas en minúscula SALVO si es la primera palabra
+        if i > 0 and p_low in _PARTICULAS:
+            resultado.append(p_low)
+        # Iniciales tipo "J." o "J.R.R."
+        elif '.' in p and len(p.replace('.','')) <= 3:
+            resultado.append(p.upper())
+        else:
+            # Capitalizar primera letra, resto minúsculas (preservando tildes/ñ)
+            resultado.append(p_low[:1].upper() + p_low[1:])
+    return ' '.join(resultado)
+
+
 # ── Registro de DejaVuSans para estrellas ─────────────────────────────────────
 _STAR_FONT = None
 def _registrar_fuente_estrellas():
@@ -101,9 +139,12 @@ def _estrellas(pts_str):
     n = max(0, min(5, n))
     fuente = _registrar_fuente_estrellas()
     print(f'[informe] _estrellas({pts_str!r}) → n={n} (fuente={fuente})', flush=True)
+    # ★ (U+2605) rellenas para puntuadas + ☆ (U+2606) vacías para no puntuadas.
+    # El contraste viene de la FORMA del glifo, no del color, así se ve
+    # correctamente aunque la fuente caiga al fallback Helvetica.
     return (
-        f'<font name="{fuente}" size="14" color="#A88838">{"\u2605" * n}</font>'
-        f'<font name="{fuente}" size="14" color="#D4CEC2">{"\u2605" * (5 - n)}</font>'
+        f'<font name="{fuente}" size="14" color="#A88838">'
+        f'{"\u2605" * n}{"\u2606" * (5 - n)}</font>'
         f'<br/><font name="Helvetica-Oblique" size="6.5" color="#888888">{n} de 5</font>'
     )
 
@@ -337,7 +378,8 @@ def _tabla_evaluacion(eval_list):
             Paragraph(f'<font name="Times-Italic" size="9" color="#3A3A3A">{e.get("obs","")}</font>',
                       S('eob','Times-Italic',9,12.5,GRIS_OSC,TA_JUSTIFY)),
         ])
-    t = Table(rows, colWidths=[36*mm, 28*mm, W_DOC - 36*mm - 28*mm])
+    t = Table(rows, colWidths=[36*mm, 28*mm, W_DOC - 36*mm - 28*mm],
+              repeatRows=1)
     t.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0), CREMA),
         ('LEFTPADDING',(0,0),(-1,-1),6),
@@ -425,9 +467,131 @@ def _hacer_footer_callback(numero_presupuesto: str):
     return _draw_footer
 
 
+# ── Bloque de Carta de la Asesora (refactor: función propia) ──────────────────
+def _construir_bloque_carta(d: dict):
+    """
+    Construye el bloque completo de la 'Nota personal de la asesora':
+    cabecera de sección + texto de la carta + firma con foto circular.
+
+    Devuelve un solo flowable (KeepTogether con todo dentro) o None si
+    no hay carta en `d`. Pensado para insertarse INMEDIATAMENTE después
+    del veredicto, en su propia página (con PageBreak previo).
+    """
+    carta = (d.get('carta_autor') or '').strip()
+    if not carta:
+        return None
+
+    # Construir HTML de los párrafos de la carta
+    carta_html = ''
+    for parrafo in carta.split('\n\n'):
+        parrafo = parrafo.strip()
+        if not parrafo:
+            continue
+        parrafo_esc = parrafo.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        carta_html += (
+            f'<font name="Times-Italic" size="11" color="#1A1A1A">{parrafo_esc}</font>'
+            '<br/><br/>'
+        )
+
+    # ── Firma de la asesora ──────────────────────────────────────────────
+    asesora = d.get('evaluado_por') or d.get('asesora_nombre') or 'La asesora editorial'
+
+    import os, unicodedata
+
+    def _norm(s):
+        s = (s or '').lower().strip()
+        return ''.join(
+            c for c in unicodedata.normalize('NFD', s)
+            if unicodedata.category(c) != 'Mn'
+        )
+
+    FOTO_MAP = {
+        'nancy': 'nancy-circ.png',
+        'editorial numancia': 'nancy-circ.png',
+        'debora': 'debora-circ.png',
+        'debora tomas': 'debora-circ.png',
+        'juan': 'juan-circ.png',
+        'juan munoz': 'juan-circ.png',
+        'laura': 'laura-circ.png',
+        'laura vega ugarte': 'laura-circ.png',
+    }
+
+    nkey = _norm(asesora)
+    foto_file = (FOTO_MAP.get(nkey) or FOTO_MAP.get(nkey.split(' ')[0])) if nkey else None
+    foto_path = os.path.join(os.path.dirname(__file__), 'fotos', foto_file) if foto_file else None
+
+    contenido_carta = Paragraph(
+        carta_html,
+        S('car', 'Times-Italic', 11, 16, NEGRO, TA_JUSTIFY,
+          leftIndent=2*mm, rightIndent=2*mm, spaceAfter=4)
+    )
+
+    firma_texto = Paragraph(
+        f'<font name="Times-Italic" size="10" color="#666666">— {asesora}</font><br/>'
+        f'<font name="Helvetica" size="6.5" color="#A88838">EDITORIAL NUMANCIA</font>',
+        S('fma', 'Times-Italic', 10, 13, GRIS, TA_RIGHT,
+          rightIndent=0, spaceAfter=2)
+    )
+
+    # Bloque firma: foto ARRIBA A LA DERECHA, justo encima del nombre
+    firma_flow = []
+    if foto_path and os.path.exists(foto_path):
+        from reportlab.platypus import Image as RLImage
+        foto_img = RLImage(foto_path, width=18*mm, height=18*mm)
+        foto_img.hAlign = 'RIGHT'
+        firma_flow.append(foto_img)
+        firma_flow.append(Spacer(1, 2*mm))
+    firma_flow.append(firma_texto)
+
+    # Tabla interna estrecha alineada a la derecha (evita que ReportLab mande la
+    # foto a la izquierda dentro de la celda grande).
+    firma_tbl = Table([[firma_flow]], colWidths=[42*mm], hAlign='RIGHT')
+    firma_tbl.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+
+    tbl_carta = Table(
+        [[contenido_carta], [firma_tbl]],
+        colWidths=[W_DOC]
+    )
+    tbl_carta.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), CREMA),
+        ('LEFTPADDING', (0, 0), (-1, -1), 14),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 14),
+        ('TOPPADDING', (0, 0), (0, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (0, 0), 4),
+        ('TOPPADDING', (0, 1), (0, 1), 6),
+        ('BOTTOMPADDING', (0, 1), (0, 1), 10),
+        ('ALIGN', (0, 1), (0, 1), 'RIGHT'),
+        ('VALIGN', (0, 1), (0, 1), 'TOP'),
+        ('LINEBELOW', (0, -1), (-1, -1), 0.6, DORADO),
+        ('LINEABOVE', (0, 0), (-1, 0), 0.6, DORADO),
+    ]))
+
+    # Envolver TODO (cabecera de sección + carta + firma) en KeepTogether
+    # para que no se parta la carta entre páginas. Como va precedido de un
+    # PageBreak, empezará en página nueva y debería caber íntegra.
+    return KeepTogether([
+        _seccion('Una nota personal de la asesora'),
+        Spacer(1, 8),
+        tbl_carta,
+    ])
+
+
 # ── Generador principal ───────────────────────────────────────────────────────
 def generar_informe(d: dict) -> bytes:
     buf = io.BytesIO()
+
+    # Copia defensiva y normalización del nombre del autor.
+    # Evita que llegue "manuel muñoz" o "MANUEL MUÑOZ" del JSON y se imprima tal cual.
+    d = dict(d)
+    if d.get('autor'):
+        d['autor'] = _capitalizar_nombre(d['autor'])
 
     # Leer número de valoración (puede venir vacío o no venir)
     numero_presupuesto = (d.get('numero_presupuesto') or '').strip()
@@ -502,51 +666,55 @@ def generar_informe(d: dict) -> bytes:
                 story.append(Paragraph(d[k], SIN))
         story.append(Spacer(1, 10))
 
-    story.append(_seccion('Evaluación editorial'))
-    story.append(Spacer(1, 4))
-    story.append(_tabla_evaluacion(d.get('eval', [])))
-    story.append(Spacer(1, 10))
+    # ════════════════════════════════════════════════════════════════════════
+    # ORDEN ORIENTADO AL AUTOR (refactor 13-05-2026):
+    # Cada bloque arranca en su propia página (PageBreak entre cada uno).
+    #   Página 1: Ficha técnica + Sinopsis      (ya construido arriba)
+    #   Página 2: Veredicto + Evaluación + Notas editoriales (todo lo valorativo)
+    #   Página 3: Análisis ortotipográfico preliminar
+    #   Página 4: Público objetivo
+    #   Página 5: Una nota personal de la asesora (con foto circular)
+    # ════════════════════════════════════════════════════════════════════════
 
-    story.append(_bloque_veredicto(
-        d.get('veredicto','CON MEJORAS'),
-        d.get('veredicto_texto','')))
+    # ── PÁGINA 2: Veredicto + Evaluación editorial + Notas ──────────────────
+    story.append(PageBreak())
+
+    # 2a) Veredicto editorial (cabecera + título grande + justificación)
+    story.append(KeepTogether([
+        _bloque_veredicto(
+            d.get('veredicto','CON MEJORAS'),
+            d.get('veredicto_texto','')),
+    ]))
+    story.append(Spacer(1, 14))
+
+    # 2b) Evaluación editorial (tabla con estrellas)
+    story.append(KeepTogether([
+        _seccion('Evaluación editorial'),
+        Spacer(1, 4),
+    ]))
+    story.append(_tabla_evaluacion(d.get('eval', [])))
     story.append(Spacer(1, 12))
 
-    # ── Público objetivo (SIEMPRE visible, aunque vengan campos vacíos) ─────
-    # Lectura tolerante: acepta `publico.X` anidado, `X` en raíz, null o ausente
-    pub_nested = d.get('publico') if isinstance(d.get('publico'), dict) else {}
-    lector_primario   = (pub_nested.get('lector_primario')   or d.get('lector_primario')   or '')
-    lector_secundario = (pub_nested.get('lector_secundario') or d.get('lector_secundario') or '')
-    comparable        = (pub_nested.get('comparable')        or d.get('comparable')        or '')
-    precio            = (pub_nested.get('precio')            or d.get('precio')            or '')
-
-    story.append(_seccion('Público objetivo'))
-    story.append(Spacer(1, 4))
-    story.append(_tabla_publico_objetivo(
-        lector_primario   = lector_primario,
-        lector_secundario = lector_secundario,
-        comparable        = comparable,
-        precio            = precio,
-    ))
-    story.append(Spacer(1, 10))
-
+    # 2c) Notas editoriales (recomendaciones de mejora)
     if d.get('notas'):
-        story.append(_seccion('Notas editoriales'))
-        story.append(Spacer(1, 6))
+        story.append(KeepTogether([
+            _seccion('Notas editoriales'),
+            Spacer(1, 6),
+        ]))
         for i, n in enumerate(d.get('notas', []), 1):
             if n:
-                story.append(Paragraph(
-                    f'<font name="Times-Bold" size="10" color="#A88838">{i}.</font>  '
-                    f'<font name="Times-Roman" size="10" color="#1A1A1A">{n}</font>',
-                    S('nt','Times-Roman',10,14,NEGRO,TA_JUSTIFY,
-                      leftIndent=6*mm, spaceAfter=4)))
-        story.append(Spacer(1, 12))
+                story.append(KeepTogether([
+                    Paragraph(
+                        f'<font name="Times-Bold" size="10" color="#A88838">{i}.</font>  '
+                        f'<font name="Times-Roman" size="10" color="#1A1A1A">{n}</font>',
+                        S('nt','Times-Roman',10,14,NEGRO,TA_JUSTIFY,
+                          leftIndent=6*mm, spaceAfter=4)),
+                ]))
 
-    # ── 8-bis. Análisis ortotipográfico preliminar ──────────────────────────
+    # ── PÁGINA 3: Análisis ortotipográfico preliminar ───────────────────────
     orto = d.get('ortotipo')
     if orto and orto.get('total_incidencias', 0) >= 0 and orto.get('incidencias'):
-        story.append(_seccion('Análisis ortotipográfico preliminar'))
-        story.append(Spacer(1, 6))
+        story.append(PageBreak())
         total = orto.get('total_incidencias', 0)
         cats  = orto.get('categorias_afectadas', 0)
         cifras = Table([[
@@ -571,7 +739,13 @@ def generar_informe(d: dict) -> bytes:
             ('BOTTOMPADDING',(0,0),(-1,-1),10),
             ('LINEBELOW',(0,0),(-1,-1),0.4, DORADO),
         ]))
-        story.append(cifras)
+        # KeepTogether: cabecera de sección + cuadro de cifras viajan juntos
+        # para que el bloque de apertura nunca quede partido.
+        story.append(KeepTogether([
+            _seccion('Análisis ortotipográfico preliminar'),
+            Spacer(1, 6),
+            cifras,
+        ]))
         story.append(Spacer(1, 8))
 
         rows = [[
@@ -621,7 +795,8 @@ def generar_informe(d: dict) -> bytes:
                     S('oer','Helvetica',8,11,GRIS_OSC,TA_JUSTIFY)),
             ])
 
-        tbl = Table(rows, colWidths=[42*mm, 16*mm, W_DOC - 42*mm - 16*mm])
+        tbl = Table(rows, colWidths=[42*mm, 16*mm, W_DOC - 42*mm - 16*mm],
+                    repeatRows=1)
         tbl.setStyle(TableStyle([
             ('BACKGROUND',(0,0),(-1,0), CREMA),
             ('LEFTPADDING',(0,0),(-1,-1),6),
@@ -644,143 +819,79 @@ def generar_informe(d: dict) -> bytes:
               leftIndent=4*mm, rightIndent=4*mm)))
         story.append(Spacer(1, 12))
 
-    # ── 9. Carta de la asesora al autor ──────────────────────────────────────
-    carta = (d.get('carta_autor') or '').strip()
-    if carta:
-        story.append(_seccion('Una nota personal de la asesora'))
-        story.append(Spacer(1, 8))
+    # ── PÁGINA 4: Público objetivo (mercado, lectores, precio) ──────────────
+    # SIEMPRE visible, aunque vengan campos vacíos.
+    # Lectura MUY tolerante: acepta múltiples nombres de campo que pueden
+    # llegar del LLM o de distintas versiones del backend.
+    story.append(PageBreak())
 
-        carta_html = ''
-        for parrafo in carta.split('\n\n'):
-            parrafo = parrafo.strip()
-            if not parrafo: continue
-            parrafo_esc = parrafo.replace('&', '&amp;').replace('<','&lt;').replace('>','&gt;')
-            carta_html += (
-                f'<font name="Times-Italic" size="11" color="#1A1A1A">{parrafo_esc}</font>'
-                '<br/><br/>'
-            )
+    pub_nested = d.get('publico') if isinstance(d.get('publico'), dict) else {}
+    # Alias alternativo: 'publico_objetivo' como bloque anidado
+    if not pub_nested and isinstance(d.get('publico_objetivo'), dict):
+        pub_nested = d.get('publico_objetivo')
 
-         # Firma de la asesora ───────────────────────────────────────────────
-        asesora = d.get('evaluado_por') or d.get('asesora_nombre') or 'La asesora editorial'
+    def _pub_get(*claves):
+        """Busca por varios nombres de campo en pub_nested y en d (raíz)."""
+        for k in claves:
+            v = pub_nested.get(k) if isinstance(pub_nested, dict) else None
+            if v: return v
+        for k in claves:
+            v = d.get(k)
+            if v: return v
+        return ''
 
-        import os, unicodedata
+    def _aplanar(v):
+        """Si viene como lista, la une con ' · '; si dict, toma values."""
+        if isinstance(v, list):
+            return ' · '.join(str(x).strip() for x in v if x)
+        if isinstance(v, dict):
+            return ' · '.join(str(x).strip() for x in v.values() if x)
+        return str(v).strip() if v else ''
 
-        def _norm(s):
-            s = (s or '').lower().strip()
-            return ''.join(
-                c for c in unicodedata.normalize('NFD', s)
-                if unicodedata.category(c) != 'Mn'
-            )
+    lector_primario   = _aplanar(_pub_get(
+        'lector_primario', 'primario', 'lectores_primarios',
+        'primary_reader', 'primary_audience'))
+    lector_secundario = _aplanar(_pub_get(
+        'lector_secundario', 'secundario', 'lectores_secundarios',
+        'secondary_reader', 'secondary_audience'))
+    comparable        = _aplanar(_pub_get(
+        'comparable', 'comparables', 'titulos_comparables',
+        'comparable_titles', 'referentes'))
+    precio            = _aplanar(_pub_get(
+        'precio', 'precio_sugerido', 'precio_recomendado',
+        'price', 'suggested_price'))
 
-        FOTO_MAP = {
-            'nancy': 'nancy-circ.png',
-            'editorial numancia': 'nancy-circ.png',
-            'debora': 'debora-circ.png',
-            'debora tomas': 'debora-circ.png',
-            'juan': 'juan-circ.png',
-            'juan munoz': 'juan-circ.png',
-            'laura': 'laura-circ.png',
-            'laura vega ugarte': 'laura-circ.png',
-        }
+    # Logging de diagnóstico: aparecerá en logs de Railway si algún campo llega vacío.
+    if not (lector_primario and lector_secundario and comparable and precio):
+        print(f'[informe] ⚠️  Público objetivo incompleto. '
+              f'primario={bool(lector_primario)}, secundario={bool(lector_secundario)}, '
+              f'comparable={bool(comparable)}, precio={bool(precio)}. '
+              f'Claves en d: {sorted(list(d.keys()))[:20]} '
+              f'Claves en publico: {sorted(list(pub_nested.keys())) if isinstance(pub_nested, dict) else "—"}',
+              flush=True)
+    else:
+        print(f'[informe] ✅ Público objetivo completo (4/4 campos)', flush=True)
 
-        nkey = _norm(asesora)
-        foto_file = (FOTO_MAP.get(nkey) or FOTO_MAP.get(nkey.split(' ')[0])) if nkey else None
-        foto_path = os.path.join(os.path.dirname(__file__), 'fotos', foto_file) if foto_file else None
+    story.append(KeepTogether([
+        _seccion('Público objetivo'),
+        Spacer(1, 4),
+        _tabla_publico_objetivo(
+            lector_primario   = lector_primario,
+            lector_secundario = lector_secundario,
+            comparable        = comparable,
+            precio            = precio,
+        ),
+    ]))
+    story.append(Spacer(1, 16))
 
-        contenido_carta = Paragraph(
-            carta_html,
-            S(
-                'car',
-                'Times-Italic',
-                11,
-                16,
-                NEGRO,
-                TA_JUSTIFY,
-                leftIndent=2*mm,
-                rightIndent=2*mm,
-                spaceAfter=4
-            )
-        )
+    # ── PÁGINA 4 (continúa): Una nota personal de la asesora ────────────────
+    # Va en la misma página que Público objetivo (sin PageBreak previo).
+    # Si no cabe, el KeepTogether interno la salta entera a la página siguiente.
+    _BLOQUE_CARTA = _construir_bloque_carta(d)
+    if _BLOQUE_CARTA is not None:
+        story.append(_BLOQUE_CARTA)
 
-        firma_texto = Paragraph(
-            f'<font name="Times-Italic" size="10" color="#666666">— {asesora}</font><br/>'
-            f'<font name="Helvetica" size="6.5" color="#A88838">EDITORIAL NUMANCIA</font>',
-            S(
-                'fma',
-                'Times-Italic',
-                10,
-                13,
-                GRIS,
-                TA_RIGHT,
-                rightIndent=0,
-                spaceAfter=2
-            )
-        )
-
-        # Bloque firma: foto ARRIBA A LA DERECHA, justo encima del nombre
-        firma_flow = []
-
-        if foto_path and os.path.exists(foto_path):
-            from reportlab.platypus import Image as RLImage
-
-            foto_img = RLImage(foto_path, width=18*mm, height=18*mm)
-            foto_img.hAlign = 'RIGHT'
-
-            firma_flow.append(foto_img)
-            firma_flow.append(Spacer(1, 2*mm))
-
-        firma_flow.append(firma_texto)
-
-        # Tabla interna estrecha alineada a la derecha.
-        # Esto evita que ReportLab mande la foto a la izquierda dentro de la celda grande.
-        firma_tbl = Table(
-            [[firma_flow]],
-            colWidths=[42*mm],
-            hAlign='RIGHT'
-        )
-
-        firma_tbl.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-            ('TOPPADDING', (0, 0), (-1, -1), 0),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-        ]))
-
-        tbl_carta = Table(
-            [
-                [contenido_carta],
-                [firma_tbl],
-            ],
-            colWidths=[W_DOC]
-        )
-
-        tbl_carta.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), CREMA),
-
-            ('LEFTPADDING', (0, 0), (-1, -1), 14),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 14),
-
-            ('TOPPADDING', (0, 0), (0, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (0, 0), 4),
-
-            ('TOPPADDING', (0, 1), (0, 1), 6),
-            ('BOTTOMPADDING', (0, 1), (0, 1), 10),
-
-            # Importante: alinear toda la celda de firma a la derecha
-            ('ALIGN', (0, 1), (0, 1), 'RIGHT'),
-            ('VALIGN', (0, 1), (0, 1), 'TOP'),
-
-            ('LINEBELOW', (0, -1), (-1, -1), 0.6, DORADO),
-            ('LINEABOVE', (0, 0), (-1, 0), 0.6, DORADO),
-        ]))
-
-        story.append(tbl_carta)
-
-        story.append(Spacer(1, 12))
-
-    # ── 10. Pie de la última página (corporativo) ───────────────────────────
+    # ── Pie de la última página (corporativo) ───────────────────────────────
     # NOTA: el footer en TODAS las páginas se dibuja vía onFirstPage/onLaterPages
     # mediante _hacer_footer_callback. Aquí solo dejamos un pequeño bloque
     # decorativo de cierre antes del footer automático.

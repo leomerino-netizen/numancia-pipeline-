@@ -829,14 +829,18 @@ def _bloque_cta_asesora(asesora):
 
 def _bloque_amortizacion(d):
     """
-    PVP del libro editable desde Lovable (`pvp_libro`, default 19.90).
-    El asesor puede ajustarlo según la obra/colección.
+    PVP del libro editable desde Lovable.
+    - Campo principal: `pvp_libreria` (€, IVA 4% INCLUIDO) — se usa tal cual
+    - Fallback: `pvp_libro` (€, IVA 4% incluido) para payloads antiguos
+    - Sin caché: cada llamada recalcula los valores
     """
     total_final = d['_total_final']
     cantidad    = d['cantidad']
-    PVP_BASE    = d.get('pvp_libro', 19.90) or 19.90
-    IVA_LIBRO   = 0.04
-    pvp_autor   = round(PVP_BASE * (1 + IVA_LIBRO), 2)
+    # Lectura priorizando pvp_libreria. Ambos campos llegan ya con IVA incluido.
+    pvp_autor   = d.get('pvp_libreria')
+    if pvp_autor is None:
+        pvp_autor = d.get('pvp_libro', 20.70)
+    pvp_autor   = round(float(pvp_autor or 20.70), 2)
     libros      = math.ceil(total_final / pvp_autor) if pvp_autor else 0
     libros      = min(libros, max(cantidad, libros))
     pct         = min(100, (libros / cantidad) * 100) if cantidad else 0
@@ -851,7 +855,7 @@ def _bloque_amortizacion(d):
     subtitulo = Paragraph(
         f'<font name="Helvetica-Oblique" size="8.5" color="#666666">'
         f'100% de las ventas para el autor · PVP '
-        f'{_fmt_eur(PVP_BASE)} + IVA 4%</font>',
+        f'{_fmt_eur(pvp_autor)} (IVA 4% incluido)</font>',
         S('ams','Helvetica-Oblique',8.5,12,GREY_TXT,spaceAfter=8))
 
     hero_izq = [
@@ -985,15 +989,23 @@ def _bloque_recompra(d):
     return items
 
 
-def _bloque_notas_adicionales(texto):
-    texto = (texto or '').strip()
+def _bloque_anotaciones(d):
+    """
+    Sección opcional al final del documento.
+    Acepta:
+    - `anotaciones` (campo nuevo de Lovable)
+    - `notas_adicionales` (campo antiguo, retrocompatibilidad)
+    Se renderiza solo si el texto resultante no está vacío.
+    Respeta saltos de línea del textarea.
+    """
+    texto = (d.get('anotaciones') or d.get('notas_adicionales') or '').strip()
     if not texto:
         return []
     items = []
     items.append(Spacer(1, 8))
     titulo = Paragraph(
         '<font name="Helvetica-Bold" size="11" color="#1F3D6B">'
-        'Notas adicionales</font>',
+        'Anotaciones</font>',
         S('nat','Helvetica-Bold',11,14,NAVY,spaceBefore=2,spaceAfter=6))
     txt_esc = texto.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
     cuerpo = Paragraph(txt_esc.replace('\n','<br/>'),
@@ -1046,7 +1058,7 @@ def _pagina3(d, asesora):
     story.extend(_bloque_pasos(d, asesora))
     story.append(Spacer(1, 8))
     story.extend(_bloque_garantias())
-    story.extend(_bloque_notas_adicionales(d.get('notas_adicionales', '')))
+    story.extend(_bloque_anotaciones(d))
     story.append(Spacer(1, 14))
     story.append(_bloque_cta_asesora(asesora))
     return story
@@ -1128,8 +1140,10 @@ if __name__ == '__main__':
         ],
         'recompra_uds':       [50, 100],
         'recompra_dto_pct':   15,
-        'pvp_libro':          19.90,
-        'notas_adicionales':  '',
+        # PVP de Librería editable por el asesor (€, IVA 4% INCLUIDO)
+        'pvp_libreria':       20.70,
+        # Sección opcional al final del PDF (multilínea)
+        'anotaciones':        '',
     }
     pdf_bytes = generar_presupuesto(datos)
     out = '/mnt/user-data/outputs/presupuesto_test.pdf'

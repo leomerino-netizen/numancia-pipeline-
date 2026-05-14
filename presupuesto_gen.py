@@ -894,9 +894,14 @@ def _bloque_recompra(d):
             S('hru','Helvetica-Bold',9,11,BLANCO,TA_CENTER)),
         Paragraph('<font name="Helvetica-Bold" size="9" color="#FFFFFF">Precio impresión</font>',
             S('hrp','Helvetica-Bold',9,11,BLANCO,TA_CENTER)),
-        Paragraph(f'<font name="Helvetica-Bold" size="9" color="#FFFFFF">Importe ({dto_pct}% dto)</font>',
+        Paragraph(f'<font name="Helvetica-Bold" size="9" color="#FFFFFF">Precio con descuento ({dto_pct}%)</font>',
             S('hri','Helvetica-Bold',9,11,BLANCO,TA_CENTER)),
+        Paragraph('<font name="Helvetica-Bold" size="9" color="#FFFFFF">Precio por ejemplar</font>',
+            S('hrue','Helvetica-Bold',9,11,BLANCO,TA_CENTER)),
     ]]
+    # Precio por ejemplar con descuento aplicado (mismo para todas las cantidades,
+    # porque el descuento es porcentual sobre el precio unitario)
+    pu_dto = round(pu_imp * (1 - dto_pct / 100), 2) if dto_pct else pu_imp
     for uds in cantidades:
         importe_bruto = round(pu_imp * uds, 2)
         importe_dto   = round(importe_bruto * (1 - dto_pct / 100), 2)
@@ -907,10 +912,12 @@ def _bloque_recompra(d):
                 S('rcb','Helvetica',9.5,13,GREY_TXT,TA_CENTER)),
             Paragraph(f'<font color="#1F3D6B"><b>{_fmt_eur(importe_dto)}</b></font>',
                 S('rcd','Helvetica-Bold',10.5,13,NAVY,TA_CENTER)),
+            Paragraph(f'<font color="#1F3D6B"><b>{_fmt_eur(pu_dto)}</b></font>',
+                S('rce','Helvetica-Bold',10,13,NAVY,TA_CENTER)),
         ])
 
-    W1 = W_DOC * 0.30; W2 = W_DOC * 0.35; W3 = W_DOC * 0.35
-    tabla = Table(filas, colWidths=[W1, W2, W3])
+    W1 = W_DOC * 0.20; W2 = W_DOC * 0.26; W3 = W_DOC * 0.30; W4 = W_DOC * 0.24
+    tabla = Table(filas, colWidths=[W1, W2, W3, W4])
     tabla.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),NAVY),
         ('TOPPADDING',(0,0),(-1,0),7),('BOTTOMPADDING',(0,0),(-1,0),7),

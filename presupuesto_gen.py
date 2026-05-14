@@ -35,7 +35,7 @@ GREY_BG     = colors.HexColor('#F4F6F8')
 GREY_BORD   = colors.HexColor('#C8C8C8')
 GREY_LINE   = colors.HexColor('#DCDCDC')
 GREY_TXT    = colors.HexColor('#666666')
-GREY_STRIKE = colors.HexColor('#999999')
+GREY_STRIKE = colors.HexColor('#555555')
 TEXT        = colors.HexColor('#222222')
 BLANCO      = colors.white
 
@@ -364,7 +364,7 @@ def _headline_precio(d):
 
     if dto and pu_dto < pu_full:
         precio_html = (
-            f'<font color="#999999"><strike>{_fmt_eur(pu_full)}</strike></font>'
+            f'<font color="#555555"><strike><b>{_fmt_eur(pu_full)}</b></strike></font>'
             f'  <font color="#1F3D6B"><b>{_fmt_eur(pu_dto)}</b></font>')
     else:
         precio_html = f'<font color="#1F3D6B"><b>{_fmt_eur(pu_full)}</b></font>'
@@ -527,7 +527,7 @@ def _bloque_resumen(d):
         # Maquetación con tachado de la tarifa original si aplica
         if t['mostrar_tachado_maq']:
             maq_html = (
-                f'<font color="#999999"><strike>{_fmt_eur(t["maquetacion_tarifa"])}</strike></font>'
+                f'<font color="#555555"><strike><b>{_fmt_eur(t["maquetacion_tarifa"])}</b></strike></font>'
                 f'  <font color="#1F3D6B"><b>{_fmt_eur(t["maquetacion"])}</b></font>'
             )
         else:
@@ -958,8 +958,8 @@ def _bloque_recompra(d):
         filas.append([
             Paragraph(f'<b>{uds} ejemplares</b>',
                 S('rcu','Helvetica',10,13,TEXT,TA_CENTER)),
-            Paragraph(f'<font color="#999999"><strike>{_fmt_eur(importe_bruto)}</strike></font>',
-                S('rcb','Helvetica',9.5,13,GREY_TXT,TA_CENTER)),
+            Paragraph(f'<font color="#555555"><strike><b>{_fmt_eur(importe_bruto)}</b></strike></font>',
+                S('rcb','Helvetica-Bold',10,13,colors.HexColor('#555555'),TA_CENTER)),
             Paragraph(f'<font color="#1F3D6B"><b>{_fmt_eur(importe_dto)}</b></font>',
                 S('rcd','Helvetica-Bold',10.5,13,NAVY,TA_CENTER)),
             Paragraph(f'<font color="#1F3D6B"><b>{_fmt_eur(pu_dto)}</b></font>',
@@ -1042,7 +1042,7 @@ def _pagina2(d, asesora):
     Librería Numancia + opciones de recompra a precio reducido.
     """
     story = []
-    story += _cabecera(asesora, d['num_presupuesto'], d['fecha'], con_logo=False)
+    story += _cabecera(asesora, d['num_presupuesto'], d['fecha'], con_logo=True)
     story.extend(_bloque_amortizacion(d))
     story.extend(_bloque_recompra(d))
     return story
@@ -1054,7 +1054,7 @@ def _pagina3(d, asesora):
     con el CTA para agendar llamada con la asesora.
     """
     story = []
-    story += _cabecera(asesora, d['num_presupuesto'], d['fecha'], con_logo=False)
+    story += _cabecera(asesora, d['num_presupuesto'], d['fecha'], con_logo=True)
     story.extend(_bloque_pasos(d, asesora))
     story.append(Spacer(1, 8))
     story.extend(_bloque_garantias())

@@ -186,37 +186,64 @@ def _calcular_totales(d):
     Devuelve dict con:
     - impresion_full: precio impresión × cantidad (sin descuento)
     - maquetacion, legales, correccion: importes pago único
-    - subtotal_full: suma de todo (sin descuento)
-    - descuento_eur: importe del descuento (0 si no hay)
-    - total_final: total con descuento aplicado (= subtotal_full si no hay dto)
-    - precio_unit_full: subtotal_full / cantidad (precio por libro SIN descuento)
-    - precio_unit_dto:  total_final / cantidad (precio por libro CON descuento)
-    - precio_unit_impresion: precio_unitario × (1 - dto/100) — para recompra
+    - maquetacion_tarifa: tarifa original de maquetación (antes del dto, si aplica)
+    - aplicar_dto_maq: bool — si la línea de maquetación va con tachado
+    - venta_libreria, venta_amazon: importes (solo si precio Y cantidad > 0)
+    - venta_libreria_cant, venta_amazon_cant: nº ejemplares
+    - subtotal_full: suma de todo (sin descuento global)
+    - descuento_eur: importe del descuento global (del payload, NO se recalcula)
+    - total_final: total con descuento aplicado
+    - precio_unit_full / precio_unit_dto: precio por libro sin/con descuento global
+    - precio_unit_impresion: precio_unitario × (1 - descuento_pct/100) — para recompra
     """
     pu_imp = d['precio_unitario']
     cant   = d['cantidad']
     dto    = d.get('descuento_pct', 0) or 0
     pm     = d.get('precio_maquetacion', 0) or 0
     pl     = d.get('precio_legal', 0) or 0
-    pc     = d.get('precio_correccion', 0) or 0   # NUEVO: corrección ortotipográfica
+    pc     = d.get('precio_correccion', 0) or 0
+
+    # Maquetación con descuento (tachado)
+    aplicar_dto_maq = bool(d.get('aplicar_descuento_maquetacion', False))
+    pm_tarifa       = d.get('precio_maquetacion_tarifa', 0) or 0
+    # Sólo válido para tachar si la tarifa es estrictamente > precio final
+    mostrar_tachado_maq = aplicar_dto_maq and pm_tarifa > pm
+
+    # Venta online (cada canal sólo cuenta si vienen precio Y cantidad > 0)
+    vl_precio = d.get('venta_libreria_precio', 0) or 0
+    vl_cant   = d.get('venta_libreria_cantidad', 0) or 0
+    venta_libreria      = round(vl_precio, 2) if (vl_precio > 0 and vl_cant > 0) else 0
+    venta_libreria_cant = vl_cant if venta_libreria else 0
+
+    va_precio = d.get('venta_amazon_precio', 0) or 0
+    va_cant   = d.get('venta_amazon_cantidad', 0) or 0
+    venta_amazon      = round(va_precio, 2) if (va_precio > 0 and va_cant > 0) else 0
+    venta_amazon_cant = va_cant if venta_amazon else 0
 
     impresion_full = round(pu_imp * cant, 2)
-    subtotal_full  = round(impresion_full + pm + pl + pc, 2)
+    subtotal_full  = round(impresion_full + pm + pl + pc
+                            + venta_libreria + venta_amazon, 2)
     descuento_eur  = round(subtotal_full * dto / 100, 2) if dto else 0
     total_final    = round(subtotal_full - descuento_eur, 2)
 
     return {
-        'impresion_full':       impresion_full,
-        'maquetacion':          pm,
-        'legales':              pl,
-        'correccion':           pc,
-        'subtotal_full':        subtotal_full,
-        'descuento_pct':        dto,
-        'descuento_eur':        descuento_eur,
-        'total_final':          total_final,
-        'precio_unit_full':     round(subtotal_full / cant, 2) if cant else 0,
-        'precio_unit_dto':      round(total_final / cant, 2) if cant else 0,
-        'precio_unit_impresion':round(pu_imp * (1 - dto / 100), 2) if dto else pu_imp,
+        'impresion_full':        impresion_full,
+        'maquetacion':           pm,
+        'maquetacion_tarifa':    pm_tarifa,
+        'mostrar_tachado_maq':   mostrar_tachado_maq,
+        'legales':               pl,
+        'correccion':            pc,
+        'venta_libreria':        venta_libreria,
+        'venta_libreria_cant':   venta_libreria_cant,
+        'venta_amazon':          venta_amazon,
+        'venta_amazon_cant':     venta_amazon_cant,
+        'subtotal_full':         subtotal_full,
+        'descuento_pct':         dto,
+        'descuento_eur':         descuento_eur,
+        'total_final':           total_final,
+        'precio_unit_full':      round(subtotal_full / cant, 2) if cant else 0,
+        'precio_unit_dto':       round(total_final / cant, 2) if cant else 0,
+        'precio_unit_impresion': round(pu_imp * (1 - dto / 100), 2) if dto else pu_imp,
     }
 
 
@@ -439,10 +466,6 @@ def _bloque_servicios(d):
         return []
 
     items = []
-    items.append(Paragraph(
-        '<font name="Helvetica-Bold" size="10" color="#1F3D6B">'
-        'Servicios incluidos · pago único</font>',
-        S('svt','Helvetica-Bold',10,13,NAVY,spaceBefore=2,spaceAfter=6)))
 
     def _serv_box(titulo, lista, precio, w):
         content = [Paragraph(
@@ -501,10 +524,18 @@ def _bloque_resumen(d):
                    S('r1r','Helvetica',9,12,TEXT,TA_RIGHT))],
     ]
     if t['maquetacion'] > 0:
+        # Maquetación con tachado de la tarifa original si aplica
+        if t['mostrar_tachado_maq']:
+            maq_html = (
+                f'<font color="#999999"><strike>{_fmt_eur(t["maquetacion_tarifa"])}</strike></font>'
+                f'  <font color="#1F3D6B"><b>{_fmt_eur(t["maquetacion"])}</b></font>'
+            )
+        else:
+            maq_html = _fmt_eur(t['maquetacion'])
         rows.append([
             Paragraph('Maquetación y diseño editorial (pago único)',
                       S('r2','Helvetica',9,12,TEXT)),
-            Paragraph(_fmt_eur(t['maquetacion']),
+            Paragraph(maq_html,
                       S('r2r','Helvetica',9,12,TEXT,TA_RIGHT))
         ])
     if t['legales'] > 0:
@@ -514,6 +545,21 @@ def _bloque_resumen(d):
             Paragraph(_fmt_eur(t['legales']),
                       S('r3r','Helvetica',9,12,TEXT,TA_RIGHT))
         ])
+    # Venta online — un canal por línea, sólo si vienen completos
+    if t['venta_libreria'] > 0:
+        rows.append([
+            Paragraph(f'Alta en Librería Numancia · {t["venta_libreria_cant"]} ejemplares',
+                      S('rvl','Helvetica',9,12,TEXT)),
+            Paragraph(_fmt_eur(t['venta_libreria']),
+                      S('rvlr','Helvetica',9,12,TEXT,TA_RIGHT))
+        ])
+    if t['venta_amazon'] > 0:
+        rows.append([
+            Paragraph(f'Alta en Amazon.es · {t["venta_amazon_cant"]} ejemplares',
+                      S('rva','Helvetica',9,12,TEXT)),
+            Paragraph(_fmt_eur(t['venta_amazon']),
+                      S('rvar','Helvetica',9,12,TEXT,TA_RIGHT))
+        ])
     if t['correccion'] > 0:
         rows.append([
             Paragraph('Corrección ortotipográfica y de estilo (pago único)',
@@ -522,7 +568,7 @@ def _bloque_resumen(d):
                       S('r3cr','Helvetica',9,12,TEXT,TA_RIGHT))
         ])
 
-    # Subtotal solo si hay descuento (para diferenciarlo del total)
+    # Subtotal sólo si hay descuento global del payload (descuento_pct > 0)
     if t['descuento_pct'] > 0:
         rows.append([
             Paragraph('<b>Subtotal</b> (IVA 4% incluido)',
@@ -560,7 +606,6 @@ def _bloque_resumen(d):
         ('LINEBELOW',(0,-1),(-1,-1),0.8,NAVY),
         ('BACKGROUND',(0,-1),(-1,-1),GREY_L),
     ]
-    # Si hay descuento marcamos subtotal con fondo gris (penúltima-2)
     if t['descuento_pct'] > 0:
         idx_subt = len(rows) - 3
         style_cmds.append(('BACKGROUND',(0,idx_subt),(-1,idx_subt),GREY_BG))
@@ -806,7 +851,7 @@ def _bloque_amortizacion(d):
     subtitulo = Paragraph(
         f'<font name="Helvetica-Oblique" size="8.5" color="#666666">'
         f'100% de las ventas para el autor · PVP '
-        f'{_fmt_eur(PVP_BASE)} (IVA 4% incluido)</font>',
+        f'{_fmt_eur(PVP_BASE)} + IVA 4%</font>',
         S('ams','Helvetica-Oblique',8.5,12,GREY_TXT,spaceAfter=8))
 
     hero_izq = [
@@ -980,23 +1025,30 @@ def _pagina1(d, asesora):
 
 
 def _pagina2(d, asesora):
+    """
+    P2 — Motivacional para el autor: cómo amortizar la publicación con la
+    Librería Numancia + opciones de recompra a precio reducido.
+    """
     story = []
     story += _cabecera(asesora, d['num_presupuesto'], d['fecha'], con_logo=False)
-    # Servicios incluidos pasan a la p2 (debajo de la cabecera) para no
-    # sobrecargar p1 y no dejar el resumen económico huérfano.
-    serv = _bloque_servicios(d)
-    if serv:
-        story.extend(serv)
-        story.append(Spacer(1, 14))
+    story.extend(_bloque_amortizacion(d))
+    story.extend(_bloque_recompra(d))
+    return story
+
+
+def _pagina3(d, asesora):
+    """
+    P3 — Procesal: cómo aceptar la propuesta, garantías, notas y cierre
+    con el CTA para agendar llamada con la asesora.
+    """
+    story = []
+    story += _cabecera(asesora, d['num_presupuesto'], d['fecha'], con_logo=False)
     story.extend(_bloque_pasos(d, asesora))
     story.append(Spacer(1, 8))
     story.extend(_bloque_garantias())
-    story.append(Spacer(1, 10))
-    story.append(_bloque_cta_asesora(asesora))
-    story.append(Spacer(1, 12))
-    story.extend(_bloque_amortizacion(d))
-    story.extend(_bloque_recompra(d))
     story.extend(_bloque_notas_adicionales(d.get('notas_adicionales', '')))
+    story.append(Spacer(1, 14))
+    story.append(_bloque_cta_asesora(asesora))
     return story
 
 
@@ -1019,6 +1071,8 @@ def generar_presupuesto(d):
     story = _pagina1(d, asesora)
     story.append(PageBreak())
     story += _pagina2(d, asesora)
+    story.append(PageBreak())
+    story += _pagina3(d, asesora)
 
     canv = _hacer_canvas(d['num_presupuesto'], d['cliente'])
     doc.build(story, canvasmaker=canv)
@@ -1037,17 +1091,23 @@ if __name__ == '__main__':
         'formato':            'A5',
         'precio_unitario':    5.20,
         'cantidad':           150,
-        'descuento_pct':      15,
-        'precio_maquetacion': 380.00,
+        'descuento_pct':      0,            # 0 porque hay dto en maquetación
+        'precio_maquetacion': 160.00,       # precio final con dto
+        'precio_maquetacion_tarifa': 322.39, # tarifa original (para tachar)
+        'aplicar_descuento_maquetacion': True,
         'precio_legal':       120.00,
-        'precio_correccion':  220.00,  # opcional - 0 si no se contrata
+        'precio_correccion':  220.00,
+        # Venta online (cada canal se muestra solo si precio Y cantidad > 0)
+        'venta_libreria_precio':   50.00,
+        'venta_libreria_cantidad': 10,
+        'venta_amazon_precio':     80.00,
+        'venta_amazon_cantidad':   10,
         'papel':              'Papel novela 80 gr',
         'cubierta':           '300 gr · Folding',
         'laminado':           'mate',
         'encuadernacion':     'fresada',
         'lomo':               '12 mm',
         'color_interior':     'B/N',
-        # Servicios SIEMPRE editables desde Lovable. Aquí ejemplo realista.
         'servicios_maquetacion': [
             'Diseño de portada personalizada',
             'Maquetación interior profesional',
@@ -1066,10 +1126,8 @@ if __name__ == '__main__':
             'en el catálogo editorial',
             'Los derechos de autor son el 100% de tu propiedad',
         ],
-        # Recompra editable (default 50 y 100 uds, dto 15%)
         'recompra_uds':       [50, 100],
         'recompra_dto_pct':   15,
-        # PVP del libro editable por el asesor (default 19,90 €)
         'pvp_libro':          19.90,
         'notas_adicionales':  '',
     }

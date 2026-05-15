@@ -382,8 +382,11 @@ def _headline_precio(d):
 def _tabla_producto(d):
     """
     Tabla principal: SOLO impresión y encuadernación.
-    Los servicios se muestran en bloque aparte ('Servicios incluidos').
-    El total general se compone luego en el resumen económico.
+    Las especificaciones del libro se construyen línea a línea.
+    Cada campo (papel, cubierta, laminado, encuadernación, lomo, color
+    interior) aparece SOLO si viene del payload con valor no vacío.
+    No hay defaults hardcodeados para evitar mostrar datos incorrectos
+    (p.ej. 'fresada' cuando es tapa dura).
     """
     pu = d['precio_unitario']
     cant = d['cantidad']
@@ -394,23 +397,57 @@ def _tabla_producto(d):
     total   = round(base + iva_eur, 2)
 
     specs = d.get('especificaciones', {})
-    color_int = specs.get('color_interior', d.get('color_interior', 'B/N'))
-    papel     = specs.get('papel',          d.get('papel', 'Papel novela 80 gr'))
-    cubierta  = specs.get('cubierta',       d.get('cubierta', '300gr'))
-    laminado  = specs.get('laminado',       d.get('laminado', 'brillante'))
-    enc       = specs.get('encuadernacion', d.get('encuadernacion', 'fresada'))
-    lomo      = specs.get('lomo',           d.get('lomo', '10mm'))
+    def _spec(key):
+        """Lectura tolerante: primero 'especificaciones' anidado, luego raíz."""
+        v = specs.get(key) or d.get(key)
+        if v is None:
+            return ''
+        v = str(v).strip()
+        return v
 
-    detalle_html = (
-        f'<b>Título del libro:</b> {d["obra"]}<br/>'
-        f'<b>Formato:</b> {d["formato"]} (14,8 × 21 cm) · '
-        f'<b>Interior:</b> {color_int} · <b>Cubierta:</b> a color<br/>'
-        f'<b>Páginas:</b> {d["paginas"]}<br/>'
-        f'<b>Tipo de impresión:</b> Digital profesional<br/>'
-        f'<b>Papel interior:</b> {papel}<br/>'
-        f'<b>Cubierta:</b> {cubierta} · <b>Laminado:</b> {laminado}<br/>'
-        f'<b>Encuadernación:</b> {enc} · <b>Lomo:</b> {lomo}'
-    )
+    color_int = _spec('color_interior')
+    papel     = _spec('papel')
+    cubierta  = _spec('cubierta')
+    laminado  = _spec('laminado')
+    enc       = _spec('encuadernacion')
+    lomo      = _spec('lomo')
+    impresion_tipo = _spec('tipo_impresion') or 'Digital profesional'
+
+    # Construir el detalle línea a línea, solo con campos no vacíos
+    lineas = [f'<b>Título del libro:</b> {d["obra"]}']
+
+    fmt_partes = []
+    if d.get('formato'):
+        fmt_partes.append(f'<b>Formato:</b> {d["formato"]} (14,8 × 21 cm)')
+    if color_int:
+        fmt_partes.append(f'<b>Interior:</b> {color_int}')
+    if fmt_partes:
+        lineas.append(' · '.join(fmt_partes))
+
+    if d.get('paginas'):
+        lineas.append(f'<b>Páginas:</b> {d["paginas"]}')
+    if impresion_tipo:
+        lineas.append(f'<b>Tipo de impresión:</b> {impresion_tipo}')
+    if papel:
+        lineas.append(f'<b>Papel interior:</b> {papel}')
+
+    cub_partes = []
+    if cubierta:
+        cub_partes.append(f'<b>Cubierta:</b> {cubierta}')
+    if laminado:
+        cub_partes.append(f'<b>Laminado:</b> {laminado}')
+    if cub_partes:
+        lineas.append(' · '.join(cub_partes))
+
+    enc_partes = []
+    if enc:
+        enc_partes.append(f'<b>Encuadernación:</b> {enc}')
+    if lomo:
+        enc_partes.append(f'<b>Lomo:</b> {lomo}')
+    if enc_partes:
+        lineas.append(' · '.join(enc_partes))
+
+    detalle_html = '<br/>'.join(lineas)
     detalle = Paragraph(detalle_html,
         S('det','Helvetica',9,13,TEXT,TA_LEFT))
 
@@ -776,14 +813,8 @@ def _bloque_cta_asesora(asesora):
             png_bytes = _aplicar_mascara_circular(foto_path, diametro_px=400)
             img_buf = io.BytesIO(png_bytes)
             img = Image(img_buf, width=32*mm, height=32*mm)
-            t_foto = Table([[img]], colWidths=[WR - 16*mm])
-            t_foto.setStyle(TableStyle([
-                ('ALIGN',(0,0),(-1,-1),'CENTER'),
-                ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
-                ('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0),
-                ('TOPPADDING',(0,0),(-1,-1),0),('BOTTOMPADDING',(0,0),(-1,-1),0),
-            ]))
-            ase_inner.append(t_foto)
+            img.hAlign = 'CENTER'   # centrar la foto dentro del bloque
+            ase_inner.append(img)
             print(f'[presupuesto] foto circular OK: {foto_path}', flush=True)
         except Exception as e:
             print(f'[presupuesto] error foto circular ({e}), fallback iniciales',
@@ -914,18 +945,49 @@ def _bloque_amortizacion(d):
 
 def _bloque_recompra(d):
     """
-    Bloque "Si necesitas más ejemplares" — dos opciones de reimpresión con
-    descuento aplicado sobre el precio unitario de impresión (sin servicios).
-    Cantidades y descuento editables desde Lovable:
-    - recompra_uds: lista (default [50, 100])
-    - recompra_dto_pct: int (default 15)
+    Bloque "Si necesitas más ejemplares" — opciones de reimpresión con
+    descuento aplicado sobre el precio unitario de impresión.
+
+    Campos editables desde el frontend (todos opcionales):
+    - reimpresion_meses (int, default 12)
+    - reimpresion_descuento_pct (int, default 15)
+    - reimpresion_cantidades (list[int], default [50, 100])
+    - reimpresion_precio_unitario (float, opcional)
+      Si no viene, usa el `precio_unitario` del presupuesto.
+    - reimpresion_mostrar (bool, default True)
+      Si False, omite toda la sección.
+
+    Retrocompatibilidad: si vienen los nombres antiguos
+    (`recompra_uds`, `recompra_dto_pct`) y no los nuevos, se usan
+    para no romper presupuestos existentes.
     """
+    # Flag de visibilidad
+    mostrar = d.get('reimpresion_mostrar', True)
+    if mostrar is False:
+        return []
+
     items = []
     items.append(Spacer(1, 8))
 
-    pu_imp = d.get('precio_unitario', 0) or 0
-    cantidades = d.get('recompra_uds') or [50, 100]
-    dto_pct    = d.get('recompra_dto_pct', 15) or 0
+    # Precio unitario: nuevo campo opcional, fallback al precio_unitario base
+    pu_imp = d.get('reimpresion_precio_unitario')
+    if pu_imp is None or pu_imp == '':
+        pu_imp = d.get('precio_unitario', 0) or 0
+    pu_imp = float(pu_imp or 0)
+
+    # Meses (con fallback al hardcoded antiguo "12")
+    meses = d.get('reimpresion_meses', 12) or 12
+
+    # Cantidades: nuevo nombre > antiguo > default
+    cantidades = (d.get('reimpresion_cantidades')
+                  or d.get('recompra_uds')
+                  or [50, 100])
+
+    # Descuento: nuevo nombre > antiguo > default
+    dto_pct = d.get('reimpresion_descuento_pct')
+    if dto_pct is None:
+        dto_pct = d.get('recompra_dto_pct', 15)
+    dto_pct = int(dto_pct or 0)
 
     titulo = Paragraph(
         '<font name="Helvetica-Bold" size="11" color="#1F3D6B">'
@@ -933,7 +995,7 @@ def _bloque_recompra(d):
         S('rct','Helvetica-Bold',11,14,NAVY,spaceBefore=2,spaceAfter=6))
 
     intro = Paragraph(
-        f'Durante los <b>12 meses</b> posteriores a la aceptación de esta '
+        f'Durante los <b>{meses} meses</b> posteriores a la aceptación de esta '
         f'propuesta puedes solicitar reimpresiones adicionales al precio '
         f'unitario de impresión (sin maquetación ni servicios), con un '
         f'<b>descuento del {dto_pct}%</b>.',
@@ -950,12 +1012,12 @@ def _bloque_recompra(d):
         Paragraph('<font name="Helvetica-Bold" size="9" color="#FFFFFF">Precio por ejemplar</font>',
             S('hrue','Helvetica-Bold',9,11,BLANCO,TA_CENTER)),
     ]]
-    # Precio por ejemplar con descuento aplicado (mismo para todas las cantidades,
-    # porque el descuento es porcentual sobre el precio unitario)
-    pu_dto = round(pu_imp * (1 - dto_pct / 100), 2) if dto_pct else pu_imp
     for uds in cantidades:
-        importe_bruto = round(pu_imp * uds, 2)
-        importe_dto   = round(importe_bruto * (1 - dto_pct / 100), 2)
+        importe_bruto    = round(pu_imp * uds, 2)
+        importe_dto      = round(importe_bruto * (1 - dto_pct / 100), 2)
+        # Precio por ejemplar real para esta fila (mismo si dto es porcentual,
+        # pero se recalcula por seguridad ante posibles redondeos)
+        pu_dto_fila      = round(importe_dto / uds, 2) if uds else 0
         filas.append([
             Paragraph(f'<b>{uds} ejemplares</b>',
                 S('rcu','Helvetica',10,13,TEXT,TA_CENTER)),
@@ -963,7 +1025,7 @@ def _bloque_recompra(d):
                 S('rcb','Helvetica-Bold',10,13,colors.HexColor('#555555'),TA_CENTER)),
             Paragraph(f'<font color="#1F3D6B"><b>{_fmt_eur(importe_dto)}</b></font>',
                 S('rcd','Helvetica-Bold',10.5,13,NAVY,TA_CENTER)),
-            Paragraph(f'<font color="#1F3D6B"><b>{_fmt_eur(pu_dto)}</b></font>',
+            Paragraph(f'<font color="#1F3D6B"><b>{_fmt_eur(pu_dto_fila)}</b></font>',
                 S('rce','Helvetica-Bold',10,13,NAVY,TA_CENTER)),
         ])
 

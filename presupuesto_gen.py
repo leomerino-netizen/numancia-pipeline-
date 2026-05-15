@@ -313,10 +313,11 @@ def _cabecera(asesora, num_presupuesto, fecha, con_logo=True):
         f'Presupuesto Nº {num_presupuesto}</font><br/>'
         f'<font name="Helvetica" size="8.5" color="#666666">{fecha}</font><br/>'
         '<font name="Helvetica-Bold" size="8.5" color="#222222">'
-        'B83969014 — FULLCOLOR PRINTCOLOR, S.L.</font><br/>'
+        'FULLCOLOR PRINTCOLOR, S.L.</font><br/>'
         '<font name="Helvetica" size="8" color="#666666">'
-        'C/ Numancia 187, planta -1 · 08034 Barcelona<br/>'
-        'Tel. 93 580 81 32 · info@editorialnumancia.com</font>',
+        'CIF B83969014<br/>'
+        'Tel. 93 580 81 32 · info@editorialnumancia.com<br/>'
+        'Horario taller: 9:00 a 17:00 h</font>',
         S('cabR', 'Helvetica', 8.5, 11.5, TEXT, TA_RIGHT))
 
     tabla = Table([[izq, der]], colWidths=[W_DOC*0.50, W_DOC*0.50])

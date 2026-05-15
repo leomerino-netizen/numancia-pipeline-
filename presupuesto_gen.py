@@ -668,6 +668,69 @@ def _bloque_pasos(d, asesora):
     pago30 = round(t['total_final'] * 0.30, 2)
     pago70 = round(t['total_final'] * 0.70, 2)
 
+    # ── Paso 3: cuerpo dinámico según servicios contratados ────────────────
+    # Reglas:
+    #  - Si precio_legal > 0  → se menciona ISBN/DL + 4 ejemplares a la BdC
+    #  - Si venta_libreria_*  > 0 → se menciona Librería Numancia
+    #  - Si venta_amazon_*    > 0 → se menciona Amazon
+    #  - Y = cantidad − 4(si DL) − libreria − amazon
+    #  - Si Y < 0 (reparto no cuadra) → silenciar el bloque del reparto
+    cantidad   = d['cantidad']
+    tiene_dl   = (d.get('precio_legal', 0) or 0) > 0
+    vl_p       = float(d.get('venta_libreria_precio', 0) or 0)
+    vl_c       = int(d.get('venta_libreria_cantidad', 0) or 0)
+    va_p       = float(d.get('venta_amazon_precio', 0) or 0)
+    va_c       = int(d.get('venta_amazon_cantidad', 0) or 0)
+    tiene_lib  = vl_p > 0 and vl_c > 0
+    tiene_amz  = va_p > 0 and va_c > 0
+
+    bdc_uds = 4 if tiene_dl else 0
+    lib_uds = vl_c if tiene_lib else 0
+    amz_uds = va_c if tiene_amz else 0
+    Y       = cantidad - bdc_uds - lib_uds - amz_uds
+
+    # Frase de pago + impresión (siempre presente)
+    base = (
+        'Revisas el ejemplar físico y lo validas como correcto o nos indicas '
+        'qué corregir y el porqué. <b>Abonas el 70% restante</b> e imprimimos '
+        f'los <b>{cantidad} ejemplares</b> de la tirada. '
+    )
+
+    # Bloque del reparto (solo si Y >= 0 y hay al menos un destino)
+    items_reparto = []
+    if tiene_dl:
+        items_reparto.append('<b>4 se envían a la Biblioteca de Catalunya</b>')
+    if tiene_lib:
+        items_reparto.append(f'<b>{lib_uds} a Librería Numancia</b>')
+    if tiene_amz:
+        items_reparto.append(f'<b>{amz_uds} a Amazon</b>')
+
+    if items_reparto and Y >= 0:
+        if len(items_reparto) == 1:
+            reparto_str = items_reparto[0]
+        elif len(items_reparto) == 2:
+            reparto_str = f'{items_reparto[0]} y {items_reparto[1]}'
+        else:
+            reparto_str = (f'{items_reparto[0]}, {items_reparto[1]} '
+                           f'y {items_reparto[2]}')
+
+        preambulo = ('Una vez pagado, gestionamos el <b>ISBN oficial</b> '
+                     'y el <b>Depósito Legal</b>: ' if tiene_dl
+                     else 'Una vez pagado: ')
+        bloque_reparto = (
+            f'{preambulo}de los <b>{cantidad} ejemplares</b>, {reparto_str}. '
+            f'<b>Recibes en casa los {Y} ejemplares restantes.</b> '
+        )
+    elif tiene_dl and Y < 0:
+        # Aún así mencionamos ISBN/DL aunque no cuadre el reparto
+        bloque_reparto = ('Una vez pagado, gestionamos el <b>ISBN oficial</b> '
+                          'y el <b>Depósito Legal</b>. ')
+    else:
+        bloque_reparto = ''
+
+    cierre = 'Entrega en 10-15 días laborables en la dirección que indiques.'
+    cuerpo_paso3 = base + bloque_reparto + cierre
+
     pasos = [
         ('1', f'Confirma tu decisión y abona el 30% — <b>{_fmt_eur(pago30)}</b>',
          f'Responde a este presupuesto por email a <b>{asesora["email"]}</b> '
@@ -684,12 +747,7 @@ def _bloque_pasos(d, asesora):
          'con calma en tu domicilio.'),
         ('3', f'Validación de la galera, gestión legal e impresión de la tirada '
               f'— <b>{_fmt_eur(pago70)}</b> (70% restante)',
-         'Revisas el ejemplar físico y lo validas como correcto o nos indicas '
-         'qué corregir y el porqué. Una vez aprobado, gestionamos el <b>ISBN</b> '
-         'oficial y el <b>Depósito Legal</b> (4 ejemplares a la Biblioteca de '
-         'Catalunya), abonas el 70% restante e imprimimos los '
-         f'<b>{d["cantidad"]} ejemplares</b> de la tirada. Entrega en 10-15 '
-         'días laborables en la dirección que indiques.'),
+         cuerpo_paso3),
     ]
 
     for num, tit, txt in pasos:

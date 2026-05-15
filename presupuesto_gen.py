@@ -945,49 +945,84 @@ def _bloque_amortizacion(d):
 
 def _bloque_recompra(d):
     """
-    Bloque "Si necesitas más ejemplares" — opciones de reimpresión con
-    descuento aplicado sobre el precio unitario de impresión.
+    Bloque "Si necesitas más ejemplares" — opciones de reimpresión.
 
-    Campos editables desde el frontend (todos opcionales):
+    ⚠️ La sección SIEMPRE aparece en el presupuesto (siempre se ofrece
+    al autor la opción de reimpresión). Solo los números son editables.
+
+    Acepta los campos del frontend (todos opcionales):
+
+    Formato campos planos por fila (preferido — Lovable):
     - reimpresion_meses (int, default 12)
-    - reimpresion_descuento_pct (int, default 15)
-    - reimpresion_cantidades (list[int], default [50, 100])
-    - reimpresion_precio_unitario (float, opcional)
-      Si no viene, usa el `precio_unitario` del presupuesto.
-    - reimpresion_mostrar (bool, default True)
-      Si False, omite toda la sección.
+    - reimpresion_descuento_pct (number, default 15)
+    - reimpresion_cantidad_1 (int, default 50)
+    - reimpresion_precio_1 (number) — si es 0/None se calcula:
+        precio_base × (1 - descuento_pct/100)
+    - reimpresion_cantidad_2 (int, default 100)
+    - reimpresion_precio_2 (number) — si es 0/None se calcula igual
 
-    Retrocompatibilidad: si vienen los nombres antiguos
-    (`recompra_uds`, `recompra_dto_pct`) y no los nuevos, se usan
-    para no romper presupuestos existentes.
+    Formato lista (retrocompatibilidad):
+    - reimpresion_cantidades (list[int])
+    - reimpresion_precio_unitario (number)
+
+    Formato antiguo (retrocompatibilidad total):
+    - recompra_uds, recompra_dto_pct
+
+    Total por fila = cantidad × precio_unitario (IVA 4% incluido).
     """
-    # Flag de visibilidad
-    mostrar = d.get('reimpresion_mostrar', True)
-    if mostrar is False:
-        return []
-
-    items = []
-    items.append(Spacer(1, 8))
-
-    # Precio unitario: nuevo campo opcional, fallback al precio_unitario base
-    pu_imp = d.get('reimpresion_precio_unitario')
-    if pu_imp is None or pu_imp == '':
-        pu_imp = d.get('precio_unitario', 0) or 0
-    pu_imp = float(pu_imp or 0)
-
-    # Meses (con fallback al hardcoded antiguo "12")
+    # Meses (default 12)
     meses = d.get('reimpresion_meses', 12) or 12
 
-    # Cantidades: nuevo nombre > antiguo > default
-    cantidades = (d.get('reimpresion_cantidades')
-                  or d.get('recompra_uds')
-                  or [50, 100])
-
-    # Descuento: nuevo nombre > antiguo > default
+    # Descuento: nuevo > antiguo > default 15
     dto_pct = d.get('reimpresion_descuento_pct')
     if dto_pct is None:
         dto_pct = d.get('recompra_dto_pct', 15)
-    dto_pct = int(dto_pct or 0)
+    dto_pct = float(dto_pct or 0)
+
+    # Precio base del presupuesto (€ por ejemplar, IVA 4% incluido)
+    precio_base = float(d.get('precio_unitario', 0) or 0)
+
+    # Lista alternativa por compatibilidad (formato anterior)
+    lista_cants_alt = (d.get('reimpresion_cantidades')
+                       or d.get('recompra_uds')
+                       or [50, 100])
+    precio_unitario_alt = d.get('reimpresion_precio_unitario')
+
+    # Default por defecto para cada fila (cuando no hay nada)
+    DEFAULT_CANTS = [50, 100]
+
+    def _resolver_fila(idx, cant_key, precio_key):
+        """
+        Devuelve siempre (cantidad>0, precio_unitario>0) para esta fila.
+        Cae a defaults cuando los campos vienen vacíos, en 0 o ausentes.
+        """
+        # Cantidad
+        cant = d.get(cant_key)
+        if cant is None or cant == '' or int(cant or 0) <= 0:
+            if idx < len(lista_cants_alt) and int(lista_cants_alt[idx] or 0) > 0:
+                cant = lista_cants_alt[idx]
+            else:
+                cant = DEFAULT_CANTS[idx] if idx < len(DEFAULT_CANTS) else 50
+        cant = int(cant)
+
+        # Precio unitario fila
+        precio = d.get(precio_key)
+        if precio is None or precio == '' or float(precio or 0) <= 0:
+            # Calcular con dto sobre precio base, o usar precio_unitario_alt
+            if precio_unitario_alt and float(precio_unitario_alt or 0) > 0:
+                precio = float(precio_unitario_alt)
+            elif precio_base > 0:
+                precio = round(precio_base * (1 - dto_pct / 100), 2)
+            else:
+                precio = 0   # solo si todo viene en 0; raro
+        precio = float(precio)
+        return cant, precio
+
+    cant1, precio1 = _resolver_fila(0, 'reimpresion_cantidad_1', 'reimpresion_precio_1')
+    cant2, precio2 = _resolver_fila(1, 'reimpresion_cantidad_2', 'reimpresion_precio_2')
+
+    items = []
+    items.append(Spacer(1, 8))
 
     titulo = Paragraph(
         '<font name="Helvetica-Bold" size="11" color="#1F3D6B">'
@@ -998,34 +1033,31 @@ def _bloque_recompra(d):
         f'Durante los <b>{meses} meses</b> posteriores a la aceptación de esta '
         f'propuesta puedes solicitar reimpresiones adicionales al precio '
         f'unitario de impresión (sin maquetación ni servicios), con un '
-        f'<b>descuento del {dto_pct}%</b>.',
+        f'<b>descuento del {int(dto_pct) if dto_pct == int(dto_pct) else dto_pct}%</b>.',
         S('rci','Helvetica',9,12.5,TEXT,TA_JUSTIFY,spaceAfter=6))
 
-    # Construir filas de opciones
+    dto_label = f'{int(dto_pct)}' if dto_pct == int(dto_pct) else f'{dto_pct}'
     filas = [[
         Paragraph('<font name="Helvetica-Bold" size="9" color="#FFFFFF">Cantidad</font>',
             S('hru','Helvetica-Bold',9,11,BLANCO,TA_CENTER)),
         Paragraph('<font name="Helvetica-Bold" size="9" color="#FFFFFF">Precio impresión</font>',
             S('hrp','Helvetica-Bold',9,11,BLANCO,TA_CENTER)),
-        Paragraph(f'<font name="Helvetica-Bold" size="9" color="#FFFFFF">Precio con descuento ({dto_pct}%)</font>',
+        Paragraph(f'<font name="Helvetica-Bold" size="9" color="#FFFFFF">Precio con descuento ({dto_label}%)</font>',
             S('hri','Helvetica-Bold',9,11,BLANCO,TA_CENTER)),
         Paragraph('<font name="Helvetica-Bold" size="9" color="#FFFFFF">Precio por ejemplar</font>',
             S('hrue','Helvetica-Bold',9,11,BLANCO,TA_CENTER)),
     ]]
-    for uds in cantidades:
-        importe_bruto    = round(pu_imp * uds, 2)
-        importe_dto      = round(importe_bruto * (1 - dto_pct / 100), 2)
-        # Precio por ejemplar real para esta fila (mismo si dto es porcentual,
-        # pero se recalcula por seguridad ante posibles redondeos)
-        pu_dto_fila      = round(importe_dto / uds, 2) if uds else 0
+    for cant, precio in [(cant1, precio1), (cant2, precio2)]:
+        importe_bruto = round(precio_base * cant, 2)
+        importe_dto   = round(precio * cant, 2)
         filas.append([
-            Paragraph(f'<b>{uds} ejemplares</b>',
+            Paragraph(f'<b>{cant} ejemplares</b>',
                 S('rcu','Helvetica',10,13,TEXT,TA_CENTER)),
             Paragraph(f'<font color="#555555"><strike><b>{_fmt_eur(importe_bruto)}</b></strike></font>',
                 S('rcb','Helvetica-Bold',10,13,colors.HexColor('#555555'),TA_CENTER)),
             Paragraph(f'<font color="#1F3D6B"><b>{_fmt_eur(importe_dto)}</b></font>',
                 S('rcd','Helvetica-Bold',10.5,13,NAVY,TA_CENTER)),
-            Paragraph(f'<font color="#1F3D6B"><b>{_fmt_eur(pu_dto_fila)}</b></font>',
+            Paragraph(f'<font color="#1F3D6B"><b>{_fmt_eur(precio)}</b></font>',
                 S('rce','Helvetica-Bold',10,13,NAVY,TA_CENTER)),
         ])
 

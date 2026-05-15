@@ -813,8 +813,18 @@ def _bloque_cta_asesora(asesora):
             png_bytes = _aplicar_mascara_circular(foto_path, diametro_px=400)
             img_buf = io.BytesIO(png_bytes)
             img = Image(img_buf, width=32*mm, height=32*mm)
-            img.hAlign = 'CENTER'   # centrar la foto dentro del bloque
-            ase_inner.append(img)
+            # Wrapper Table de 1 columna con ancho EXACTO del espacio interior
+            # (WR menos los 16 puntos de padding del t_ase: 8 izq + 8 der).
+            # ALIGN CENTER de la celda fuerza el centrado horizontal de la imagen.
+            inner_w = WR - 16  # mismas unidades (puntos) que el padding
+            img_wrap = Table([[img]], colWidths=[inner_w])
+            img_wrap.setStyle(TableStyle([
+                ('ALIGN',(0,0),(-1,-1),'CENTER'),
+                ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+                ('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0),
+                ('TOPPADDING',(0,0),(-1,-1),0),('BOTTOMPADDING',(0,0),(-1,-1),0),
+            ]))
+            ase_inner.append(img_wrap)
             print(f'[presupuesto] foto circular OK: {foto_path}', flush=True)
         except Exception as e:
             print(f'[presupuesto] error foto circular ({e}), fallback iniciales',

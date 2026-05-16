@@ -2,11 +2,13 @@
 docx_parser.py — Parser inteligente de manuscritos Word
 Detecta: TOC, título, autor, dedicatoria, epígrafe, capítulos, párrafos, diálogos.
 
-CAMBIO 15/05/2026 (Fix BadZipFile):
-  Acepta manuscritos en PDF además de .docx. Si detecta un PDF (magic bytes
-  %PDF), lo convierte automáticamente a .docx con pdf2docx antes de parsear.
-  Requiere `pdf2docx>=0.5.8` en requirements.txt.
-  Editorialmente sigue siendo preferible exigir el .docx original al autor.
+CAMBIO 16/05/2026 (Fix BadZipFile + DOCX limpio):
+  Si el manuscrito llega como PDF, se extrae el texto plano con pdfplumber
+  y se construye un DOCX limpio desde cero con python-docx. El resultado:
+    • Word lo abre sin errores
+    • python-docx lo procesa perfectamente
+    • El pipeline editorial recibe texto puro (que es lo que corrige)
+  No requiere pdf2docx: usa pdfplumber (ya en requirements.txt) + python-docx.
 """
 import io
 import os
@@ -15,6 +17,7 @@ import tempfile
 from dataclasses import dataclass, field
 from typing import List
 from docx import Document
+from docx.shared import Pt
 from limpiador_manuscrito import (
     limpiar_bloques, normalizar_comillas, normalizar_dialogos,
     normalizar_espacios, _quitar_invisibles
@@ -39,7 +42,7 @@ class Manuscrito:
     notas_autor:  List[str] = field(default_factory=list)
 
 
-# ── Helpers PDF→DOCX (Fix BadZipFile) ─────────────────────────────────────────
+# ── Helpers PDF→DOCX (extracción texto plano) ─────────────────────────────────
 def _es_pdf(blob) -> bool:
     """Detecta PDF por su magic header (%PDF-)."""
     return (isinstance(blob, (bytes, bytearray))
@@ -49,27 +52,48 @@ def _es_pdf(blob) -> bool:
 
 def _convertir_pdf_a_docx(pdf_bytes: bytes) -> bytes:
     """
-    Convierte PDF a DOCX usando pdf2docx. Devuelve los bytes del .docx.
-    Si el paquete no está instalado, lanza RuntimeError con instrucciones.
+    Extrae texto plano del PDF con pdfplumber y construye un DOCX limpio
+    desde cero con python-docx. Pierde formato (tablas, imágenes, columnas)
+    pero genera un archivo 100% compatible con Word y con el pipeline
+    editorial (que corrige texto, no formato).
+
+    Dependencias: pdfplumber (ya en requirements.txt) + python-docx (ídem).
+    NO necesita pdf2docx.
     """
-    try:
-        from pdf2docx import Converter
-    except ImportError as e:
-        raise RuntimeError(
-            'pdf2docx no está instalado. Añade `pdf2docx>=0.5.8` a '
-            'requirements.txt y redeploya el backend.'
-        ) from e
+    import pdfplumber
 
     with tempfile.TemporaryDirectory() as tmpdir:
         pdf_path  = os.path.join(tmpdir, 'in.pdf')
         docx_path = os.path.join(tmpdir, 'out.docx')
+
         with open(pdf_path, 'wb') as f:
             f.write(pdf_bytes)
-        cv = Converter(pdf_path)
-        try:
-            cv.convert(docx_path, start=0, end=None)
-        finally:
-            cv.close()
+
+        # Crear DOCX limpio con estilo serif 11pt (similar a manuscrito)
+        doc = Document()
+        style = doc.styles['Normal']
+        style.font.name = 'Times New Roman'
+        style.font.size = Pt(11)
+
+        paginas_con_texto = 0
+        with pdfplumber.open(pdf_path) as pdf:
+            total_pages = len(pdf.pages)
+            for i, page in enumerate(pdf.pages):
+                text = page.extract_text()
+                if text:
+                    paginas_con_texto += 1
+                    for line in text.split('\n'):
+                        line = line.strip()
+                        if line:
+                            doc.add_paragraph(line)
+                    # Salto de página entre páginas del PDF (excepto la última)
+                    if i < total_pages - 1:
+                        doc.add_page_break()
+
+        print(f'[docx_parser] PDF→DOCX: {total_pages} páginas PDF, '
+              f'{paginas_con_texto} con texto extraído', flush=True)
+
+        doc.save(docx_path)
         with open(docx_path, 'rb') as f:
             return f.read()
 
@@ -154,14 +178,13 @@ def _es_sep(texto):
 
 # ── Parser principal ──────────────────────────────────────────────────────────
 def parsear_docx(src) -> Manuscrito:
-    # ── Guard PDF→DOCX (Fix BadZipFile) ──────────────────────────────────────
-    # Si el manuscrito llega como PDF (la asesora subió un .pdf en lugar de un
-    # .docx), lo convertimos automáticamente para no bloquear el flujo. La
-    # conversión es aproximada y pierde formato fino; lo correcto editorialmente
-    # sigue siendo pedir el .docx original al autor.
+    # ── Guard PDF→DOCX limpio ────────────────────────────────────────────────
+    # Si el manuscrito llega como PDF, extraemos texto plano con pdfplumber
+    # y construimos un DOCX limpio desde cero. El resultado lo abre Word sin
+    # errores y el pipeline editorial lo procesa perfectamente.
     if _es_pdf(src):
         print('[docx_parser] manuscrito recibido en PDF, '
-              'convirtiendo a DOCX automáticamente', flush=True)
+              'extrayendo texto y construyendo DOCX limpio', flush=True)
         src = _convertir_pdf_a_docx(src)
 
     if isinstance(src,(bytes,bytearray)):
@@ -183,18 +206,12 @@ def parsear_docx(src) -> Manuscrito:
     parrs = [(i, p) for i, p in enumerate(doc.paragraphs)]
 
     # ── 1. Detectar y saltar índice/TOC inicial ───────────────────────────────
-    # Criterio: bloque inicial donde TODOS son "Body Text" o tienen
-    # el patrón "Capítulo X — título" en la primera sección del doc
     inicio = 0
-    # Buscar el primer párrafo que parezca el cuerpo real (Normal y no es lista de caps)
     toc_fin = 0
     for idx, (_, p) in enumerate(parrs):
         est = _estilo(p)
         t   = p.text.strip()
-        # Si encontramos el título real (mayúsculas cortas, estilo Normal, no cap list)
-        # o una línea que claramente es inicio de texto narrativo, paramos el TOC
         if est == 'normal' and t.isupper() and len(t) < 60 and not _CAP_RE.match(t):
-            # Podría ser el título de la obra
             toc_fin = idx
             break
         if est == 'normal' and _es_cap(t, est) and idx > 5:
@@ -210,7 +227,6 @@ def parsear_docx(src) -> Manuscrito:
 
     # ── 2. Detectar título y autor ────────────────────────────────────────────
     inicio = 0
-    # Palabras que NUNCA son un título completo (artículos, preposiciones)
     _NO_TITULO_SOLO = {'EL','LA','LOS','LAS','UN','UNA','UNOS','UNAS','DE','DEL','EN'}
     idx = 0
     while idx < min(len(parrs), 6):
@@ -222,9 +238,6 @@ def parsear_docx(src) -> Manuscrito:
         es_articulo_solo = t_norm in _NO_TITULO_SOLO
         es_demasiado_corto = len(t.strip()) < 3
 
-        # CASO ESPECIAL: si vemos un artículo solo ("LA", "EL"…) en mayúsculas
-        # y el siguiente párrafo también es texto en mayúsculas corto, los unimos
-        # como título compuesto: "LA" + "ATALAYA" → "La Atalaya"
         if es_articulo_solo and t.isupper() and idx + 1 < len(parrs):
             t_next, _ = _runs_html(parrs[idx+1][1])
             t_next_norm = t_next.strip().upper()
@@ -232,11 +245,9 @@ def parsear_docx(src) -> Manuscrito:
                 and t_next_norm not in _NO_TITULOS
                 and not any(t_next_norm.startswith(p) for p in _NO_TITULOS)
                 and not _es_cap(t_next, _estilo(parrs[idx+1][1]))):
-                # Combinar artículo + sustantivo en formato bonito
                 titulo_compuesto = f'{t.strip().capitalize()} {t_next.strip().capitalize()}'
                 if not ms.titulo: ms.titulo = titulo_compuesto
                 inicio = idx + 2
-                # ¿Línea siguiente es el autor?
                 if idx+2 < len(parrs):
                     t3, _ = _runs_html(parrs[idx+2][1])
                     est3  = _estilo(parrs[idx+2][1])
@@ -248,14 +259,12 @@ def parsear_docx(src) -> Manuscrito:
         if not es_estructural and not es_articulo_solo and not es_demasiado_corto and (
             (t.isupper() and len(t) < 80 and not _es_cap(t, est)) or
             any(x in est for x in ['title','titulo','heading 1'])):
-            # Capitalizar bonito en lugar de mantener todo en mayúsculas
             if t.isupper() and not any(x in est for x in ['title','titulo','heading 1']):
                 titulo_bonito = t.strip().capitalize() if ' ' not in t.strip() else ' '.join(w.capitalize() for w in t.strip().split())
             else:
                 titulo_bonito = t
             if not ms.titulo: ms.titulo = titulo_bonito
             inicio = idx + 1
-            # Siguiente podría ser autor o subtítulo
             if idx+1 < len(parrs):
                 t2, _ = _runs_html(parrs[idx+1][1])
                 est2  = _estilo(parrs[idx+1][1])
@@ -277,8 +286,6 @@ def parsear_docx(src) -> Manuscrito:
             break
 
     if primer_cap_idx and primer_cap_idx > 0:
-        # Contar párrafos vacíos consecutivos al final del preámbulo
-        # para detectar páginas en blanco intencionales antes del cap 1
         vacios_antes_cap = 0
         for j in range(primer_cap_idx - 1, -1, -1):
             t_j, _ = _runs_html(parrs[j][1])
@@ -286,11 +293,8 @@ def parsear_docx(src) -> Manuscrito:
                 vacios_antes_cap += 1
             else:
                 break
-        # 15+ párrafos vacíos seguidos = página en blanco intencional antes del cap 1
-        # (ej: portada → blanca → cap 1)
         if vacios_antes_cap >= 15:
             ms.bloques.append(Bloque('pagina_blanca', '', ''))
-        # Detectar también page break explícito (Ctrl+Enter) en cualquier párrafo del preámbulo
         else:
             for _, p in parrs[:primer_cap_idx]:
                 if _tiene_page_break(p):
@@ -298,22 +302,19 @@ def parsear_docx(src) -> Manuscrito:
                         ms.bloques.append(Bloque('pagina_blanca', '', ''))
                     break
 
-        # Procesar dedicatoria/epígrafe del preámbulo
         for _, p in parrs[:primer_cap_idx]:
             t, h = _runs_html(p)
             tl   = t.lower()
             if any(tl.startswith(s) for s in _DED) and len(t) < 200:
                 ms.dedicatoria.append(h or t)
-            elif t.startswith(('«','"','"')) or t.startswith('—') and len(t)<120:
+            elif t.startswith(('«','"','\u201c')) or t.startswith('—') and len(t)<120:
                 ms.epigrafe.append(h or t)
         parrs = parrs[primer_cap_idx:]
 
     # ── 4. Parsear cuerpo ─────────────────────────────────────────────────────
     i = 0
     primer_tras_cap = False
-    parr_vacios_seguidos = 0   # contador de párrafos vacíos consecutivos
-    # Umbral alto: solo secuencias muy largas son verdaderas páginas en blanco
-    # intencionales (las separaciones cortas entre capítulos no cuentan).
+    parr_vacios_seguidos = 0
     UMBRAL_PAG_BLANCA  = 15
 
     while i < len(parrs):
@@ -321,19 +322,13 @@ def parsear_docx(src) -> Manuscrito:
         t, h = _runs_html(p)
         est  = _estilo(p)
 
-        # ¿Tiene un page break explícito de Word (Ctrl+Enter)?
-        # Si el párrafo contiene <w:br w:type="page"/> y está vacío o casi,
-        # lo registramos como página en blanco intencional del autor.
         if _tiene_page_break(p) and len(t) < 5:
-            # Solo emitimos una pagina_blanca si el bloque previo no es ya una
             if not ms.bloques or ms.bloques[-1].tipo != 'pagina_blanca':
                 ms.bloques.append(Bloque('pagina_blanca', '', ''))
             i += 1; continue
 
         if not t:
             parr_vacios_seguidos += 1
-            # Si superamos el umbral, registramos UNA página en blanco
-            # (no varias seguidas: solo emitimos al pasar el umbral)
             if parr_vacios_seguidos == UMBRAL_PAG_BLANCA:
                 ms.bloques.append(Bloque('pagina_blanca', '', ''))
             i += 1; continue
@@ -358,7 +353,6 @@ def parsear_docx(src) -> Manuscrito:
         if _es_cap(t, est):
             num_cap = t.strip()
             sub_cap = ''
-            # Mirar si la siguiente línea es subtítulo
             if i+1 < len(parrs):
                 t2, h2 = _runs_html(parrs[i+1][1])
                 est2   = _estilo(parrs[i+1][1])

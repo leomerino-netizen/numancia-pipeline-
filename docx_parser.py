@@ -1,8 +1,17 @@
 """
 docx_parser.py — Parser inteligente de manuscritos Word
 Detecta: TOC, título, autor, dedicatoria, epígrafe, capítulos, párrafos, diálogos.
+
+CAMBIO 15/05/2026 (Fix BadZipFile):
+  Acepta manuscritos en PDF además de .docx. Si detecta un PDF (magic bytes
+  %PDF), lo convierte automáticamente a .docx con pdf2docx antes de parsear.
+  Requiere `pdf2docx>=0.5.8` en requirements.txt.
+  Editorialmente sigue siendo preferible exigir el .docx original al autor.
 """
+import io
+import os
 import re
+import tempfile
 from dataclasses import dataclass, field
 from typing import List
 from docx import Document
@@ -28,6 +37,41 @@ class Manuscrito:
     epigrafe_autor: str = ''
     bloques:      List[Bloque] = field(default_factory=list)
     notas_autor:  List[str] = field(default_factory=list)
+
+
+# ── Helpers PDF→DOCX (Fix BadZipFile) ─────────────────────────────────────────
+def _es_pdf(blob) -> bool:
+    """Detecta PDF por su magic header (%PDF-)."""
+    return (isinstance(blob, (bytes, bytearray))
+            and len(blob) >= 4
+            and bytes(blob[:4]) == b'%PDF')
+
+
+def _convertir_pdf_a_docx(pdf_bytes: bytes) -> bytes:
+    """
+    Convierte PDF a DOCX usando pdf2docx. Devuelve los bytes del .docx.
+    Si el paquete no está instalado, lanza RuntimeError con instrucciones.
+    """
+    try:
+        from pdf2docx import Converter
+    except ImportError as e:
+        raise RuntimeError(
+            'pdf2docx no está instalado. Añade `pdf2docx>=0.5.8` a '
+            'requirements.txt y redeploya el backend.'
+        ) from e
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pdf_path  = os.path.join(tmpdir, 'in.pdf')
+        docx_path = os.path.join(tmpdir, 'out.docx')
+        with open(pdf_path, 'wb') as f:
+            f.write(pdf_bytes)
+        cv = Converter(pdf_path)
+        try:
+            cv.convert(docx_path, start=0, end=None)
+        finally:
+            cv.close()
+        with open(docx_path, 'rb') as f:
+            return f.read()
 
 
 # ── Regexes ───────────────────────────────────────────────────────────────────
@@ -110,7 +154,16 @@ def _es_sep(texto):
 
 # ── Parser principal ──────────────────────────────────────────────────────────
 def parsear_docx(src) -> Manuscrito:
-    import io
+    # ── Guard PDF→DOCX (Fix BadZipFile) ──────────────────────────────────────
+    # Si el manuscrito llega como PDF (la asesora subió un .pdf en lugar de un
+    # .docx), lo convertimos automáticamente para no bloquear el flujo. La
+    # conversión es aproximada y pierde formato fino; lo correcto editorialmente
+    # sigue siendo pedir el .docx original al autor.
+    if _es_pdf(src):
+        print('[docx_parser] manuscrito recibido en PDF, '
+              'convirtiendo a DOCX automáticamente', flush=True)
+        src = _convertir_pdf_a_docx(src)
+
     if isinstance(src,(bytes,bytearray)):
         doc = Document(io.BytesIO(src))
     else:

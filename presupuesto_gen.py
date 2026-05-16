@@ -183,18 +183,13 @@ def _fmt_eur(v):
 def _calcular_totales(d):
     """
     Centraliza el cálculo de todos los importes del presupuesto.
-    Devuelve dict con:
-    - impresion_full: precio impresión × cantidad (sin descuento)
-    - maquetacion, legales, correccion: importes pago único
-    - maquetacion_tarifa: tarifa original de maquetación (antes del dto, si aplica)
-    - aplicar_dto_maq: bool — si la línea de maquetación va con tachado
-    - venta_libreria, venta_amazon: importes (solo si precio Y cantidad > 0)
-    - venta_libreria_cant, venta_amazon_cant: nº ejemplares
-    - subtotal_full: suma de todo (sin descuento global)
-    - descuento_eur: importe del descuento global (del payload, NO se recalcula)
-    - total_final: total con descuento aplicado
-    - precio_unit_full / precio_unit_dto: precio por libro sin/con descuento global
-    - precio_unit_impresion: precio_unitario × (1 - descuento_pct/100) — para recompra
+    Devuelve dict con los importes desglosados y totales.
+
+    Altas en canales de venta (precios fijos):
+    - Alta Librería Numancia sola: 25 €
+    - Alta Amazon sola: 50 €
+    - Pack Librería + Amazon: 65 € (en lugar de 25 + 50 por separado)
+    - Gestión Sello Editorial Numancia: 45 € (si sello_editorial=true)
     """
     pu_imp = d['precio_unitario']
     cant   = d['cantidad']
@@ -206,23 +201,32 @@ def _calcular_totales(d):
     # Maquetación con descuento (tachado)
     aplicar_dto_maq = bool(d.get('aplicar_descuento_maquetacion', False))
     pm_tarifa       = d.get('precio_maquetacion_tarifa', 0) or 0
-    # Sólo válido para tachar si la tarifa es estrictamente > precio final
     mostrar_tachado_maq = aplicar_dto_maq and pm_tarifa > pm
 
-    # Venta online (cada canal sólo cuenta si vienen precio Y cantidad > 0)
-    vl_precio = d.get('venta_libreria_precio', 0) or 0
-    vl_cant   = d.get('venta_libreria_cantidad', 0) or 0
-    venta_libreria      = round(vl_precio, 2) if (vl_precio > 0 and vl_cant > 0) else 0
-    venta_libreria_cant = vl_cant if venta_libreria else 0
+    # ── Altas en canales de venta (precios fijos, lógica pack) ──────────
+    vl_cant = int(d.get('venta_libreria_cantidad', 0) or 0)
+    va_cant = int(d.get('venta_amazon_cantidad', 0) or 0)
+    tiene_alta_libreria = vl_cant > 0
+    tiene_alta_amazon   = va_cant > 0
+    alta_combinada      = tiene_alta_libreria and tiene_alta_amazon
 
-    va_precio = d.get('venta_amazon_precio', 0) or 0
-    va_cant   = d.get('venta_amazon_cantidad', 0) or 0
-    venta_amazon      = round(va_precio, 2) if (va_precio > 0 and va_cant > 0) else 0
-    venta_amazon_cant = va_cant if venta_amazon else 0
+    if alta_combinada:
+        pack_alta_cost     = 65.0
+        alta_libreria_cost = 0
+        alta_amazon_cost   = 0
+    else:
+        pack_alta_cost     = 0
+        alta_libreria_cost = 25.0 if tiene_alta_libreria else 0
+        alta_amazon_cost   = 50.0 if tiene_alta_amazon else 0
+
+    # ── Gestión Sello Editorial Numancia ────────────────────────────────
+    sello_editorial      = bool(d.get('sello_editorial', False))
+    sello_editorial_cost = 45.0 if sello_editorial else 0
+
+    altas_total = pack_alta_cost + alta_libreria_cost + alta_amazon_cost + sello_editorial_cost
 
     impresion_full = round(pu_imp * cant, 2)
-    subtotal_full  = round(impresion_full + pm + pl + pc
-                            + venta_libreria + venta_amazon, 2)
+    subtotal_full  = round(impresion_full + pm + pl + pc + altas_total, 2)
     descuento_eur  = round(subtotal_full * dto / 100, 2) if dto else 0
     total_final    = round(subtotal_full - descuento_eur, 2)
 
@@ -233,10 +237,18 @@ def _calcular_totales(d):
         'mostrar_tachado_maq':   mostrar_tachado_maq,
         'legales':               pl,
         'correccion':            pc,
-        'venta_libreria':        venta_libreria,
-        'venta_libreria_cant':   venta_libreria_cant,
-        'venta_amazon':          venta_amazon,
-        'venta_amazon_cant':     venta_amazon_cant,
+        # Altas y sello
+        'tiene_alta_libreria':   tiene_alta_libreria,
+        'tiene_alta_amazon':     tiene_alta_amazon,
+        'alta_combinada':        alta_combinada,
+        'pack_alta_cost':        pack_alta_cost,
+        'alta_libreria_cost':    alta_libreria_cost,
+        'alta_amazon_cost':      alta_amazon_cost,
+        'venta_libreria_cant':   vl_cant,
+        'venta_amazon_cant':     va_cant,
+        'sello_editorial':       sello_editorial,
+        'sello_editorial_cost':  sello_editorial_cost,
+        # Totales
         'subtotal_full':         subtotal_full,
         'descuento_pct':         dto,
         'descuento_eur':         descuento_eur,
@@ -583,20 +595,36 @@ def _bloque_resumen(d):
             Paragraph(_fmt_eur(t['legales']),
                       S('r3r','Helvetica',9,12,TEXT,TA_RIGHT))
         ])
-    # Venta online — un canal por línea, sólo si vienen completos
-    if t['venta_libreria'] > 0:
+    # ── Altas en canales (pack combinado o individuales) ──────────────
+    if t['alta_combinada']:
         rows.append([
-            Paragraph(f'Alta en Librería Numancia · {t["venta_libreria_cant"]} ejemplares',
-                      S('rvl','Helvetica',9,12,TEXT)),
-            Paragraph(_fmt_eur(t['venta_libreria']),
-                      S('rvlr','Helvetica',9,12,TEXT,TA_RIGHT))
+            Paragraph(f'Pack alta Librería Numancia + Amazon',
+                      S('rpack','Helvetica',9,12,TEXT)),
+            Paragraph(_fmt_eur(t['pack_alta_cost']),
+                      S('rpackr','Helvetica',9,12,TEXT,TA_RIGHT))
         ])
-    if t['venta_amazon'] > 0:
+    else:
+        if t['tiene_alta_libreria']:
+            rows.append([
+                Paragraph(f'Alta en Librería Numancia',
+                          S('rvl','Helvetica',9,12,TEXT)),
+                Paragraph(_fmt_eur(t['alta_libreria_cost']),
+                          S('rvlr','Helvetica',9,12,TEXT,TA_RIGHT))
+            ])
+        if t['tiene_alta_amazon']:
+            rows.append([
+                Paragraph(f'Alta en Amazon',
+                          S('rva','Helvetica',9,12,TEXT)),
+                Paragraph(_fmt_eur(t['alta_amazon_cost']),
+                          S('rvar','Helvetica',9,12,TEXT,TA_RIGHT))
+            ])
+    # ── Gestión Sello Editorial ─────────────────────────────────────────
+    if t['sello_editorial']:
         rows.append([
-            Paragraph(f'Alta en Amazon.es · {t["venta_amazon_cant"]} ejemplares',
-                      S('rva','Helvetica',9,12,TEXT)),
-            Paragraph(_fmt_eur(t['venta_amazon']),
-                      S('rvar','Helvetica',9,12,TEXT,TA_RIGHT))
+            Paragraph('Gestión Sello Editorial Numancia',
+                      S('rsello','Helvetica',9,12,TEXT)),
+            Paragraph(_fmt_eur(t['sello_editorial_cost']),
+                      S('rsellor','Helvetica',9,12,TEXT,TA_RIGHT))
         ])
     if t['correccion'] > 0:
         rows.append([
@@ -671,18 +699,16 @@ def _bloque_pasos(d, asesora):
     # ── Paso 3: cuerpo dinámico según servicios contratados ────────────────
     # Reglas:
     #  - Si precio_legal > 0  → se menciona ISBN/DL + 4 ejemplares a la BdC
-    #  - Si venta_libreria_*  > 0 → se menciona Librería Numancia
-    #  - Si venta_amazon_*    > 0 → se menciona Amazon
+    #  - Si venta_libreria_cantidad > 0 → se menciona Librería Numancia
+    #  - Si venta_amazon_cantidad > 0   → se menciona Amazon
     #  - Y = cantidad − 4(si DL) − libreria − amazon
     #  - Si Y < 0 (reparto no cuadra) → silenciar el bloque del reparto
     cantidad   = d['cantidad']
     tiene_dl   = (d.get('precio_legal', 0) or 0) > 0
-    vl_p       = float(d.get('venta_libreria_precio', 0) or 0)
     vl_c       = int(d.get('venta_libreria_cantidad', 0) or 0)
-    va_p       = float(d.get('venta_amazon_precio', 0) or 0)
     va_c       = int(d.get('venta_amazon_cantidad', 0) or 0)
-    tiene_lib  = vl_p > 0 and vl_c > 0
-    tiene_amz  = va_p > 0 and va_c > 0
+    tiene_lib  = vl_c > 0
+    tiene_amz  = va_c > 0
 
     bdc_uds = 4 if tiene_dl else 0
     lib_uds = vl_c if tiene_lib else 0

@@ -191,12 +191,6 @@ def parsear_docx(src) -> Manuscrito:
         doc = Document(io.BytesIO(src))
     else:
         doc = Document(src)
-      from toc_filter import filtrar_indice_manual
-
-doc = Document(src)
-parrafos = filtrar_indice_manual(list(doc.paragraphs), docx_path=src)
-# resto del pipeline usando `parrafos` en lugar de `doc.paragraphs`
-
     ms = Manuscrito()
 
     # Metadatos del core (solo si tienen sentido — no artículos sueltos)

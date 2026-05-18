@@ -1001,8 +1001,8 @@ def _bloque_garantias():
          'Todo transparente. El precio solo varía si cambian las páginas '
          'a maquetar o la tirada acordada.'),
         ('Acompañamiento',
-         'De la primera llamada al libro en tus manos. Tu asesora dedicada, '
-         'disponible para cada consulta o duda del proceso editorial.'),
+         'Una asesora editorial dedicada en todas las fases del proyecto. '
+         'Misma persona, mismo teléfono y email, de principio a fin.'),
         ('Calidad garantizada',
          'Recibes un libro de muestra antes de la tirada completa para '
          'aprobarlo en tu domicilio.'),

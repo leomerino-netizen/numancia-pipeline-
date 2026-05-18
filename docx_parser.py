@@ -9,6 +9,13 @@ CAMBIO 16/05/2026 (Fix BadZipFile + DOCX limpio):
     • python-docx lo procesa perfectamente
     • El pipeline editorial recibe texto puro (que es lo que corrige)
   No requiere pdf2docx: usa pdfplumber (ya en requirements.txt) + python-docx.
+
+CAMBIO 17/05/2026 (Fix TOC manuscrito convertido en capítulos falsos):
+  Integración de toc_filter v2 — detecta y elimina índices manuales del autor
+  (marcador ÍNDICE/CONTENIDO/SUMARIO, leader dots, estilos TOC nativos de Word
+  y campos <w:fldChar>) antes de procesar el manuscrito. Con defensas:
+  safety_cap 35%, whitelist por posición (último 15%) y whitelist por nombre
+  (Glosario, Índice onomástico, Bibliografía...).
 """
 import io
 import os
@@ -22,6 +29,7 @@ from limpiador_manuscrito import (
     limpiar_bloques, normalizar_comillas, normalizar_dialogos,
     normalizar_espacios, _quitar_invisibles
 )
+from toc_filter import filtrar_indice_manual
 
 @dataclass
 class Bloque:
@@ -191,6 +199,53 @@ def parsear_docx(src) -> Manuscrito:
         doc = Document(io.BytesIO(src))
     else:
         doc = Document(src)
+
+    # ── Filtrar TOC manual del manuscrito (toc_filter v2) ─────────────────────
+    # Detecta y elimina índices manuales del autor (ÍNDICE/CONTENIDO/SUMARIO),
+    # leader dots, estilos TOC nativos de Word y campos <w:fldChar>.
+    # Defensas: safety_cap 35% · posición tardía 85% · whitelist por nombre.
+    # Para que la detección de campos TOC nativos funcione cuando src es bytes,
+    # escribimos un tempfile temporal.
+    _tmp_toc_path = None
+    docx_path_para_toc = None
+    if isinstance(src, (bytes, bytearray)):
+        try:
+            _tmp = tempfile.NamedTemporaryFile(suffix='.docx', delete=False)
+            _tmp.write(src)
+            _tmp.close()
+            _tmp_toc_path = _tmp.name
+            docx_path_para_toc = _tmp_toc_path
+        except Exception as e:
+            print(f'[docx_parser] toc_filter: no se pudo crear tempfile '
+                  f'({e}), se omite detección XML de campos TOC nativos',
+                  flush=True)
+    elif isinstance(src, str):
+        docx_path_para_toc = src
+
+    try:
+        parrafos_originales = list(doc.paragraphs)
+        parrafos_limpios = filtrar_indice_manual(
+            parrafos_originales,
+            docx_path=docx_path_para_toc,
+        )
+        eliminados = len(parrafos_originales) - len(parrafos_limpios)
+        if eliminados > 0:
+            print(f'[docx_parser] toc_filter: '
+                  f'{len(parrafos_originales)} → {len(parrafos_limpios)} '
+                  f'párrafos (-{eliminados} del índice/TOC)', flush=True)
+    except Exception as e:
+        # Si el filtro falla por cualquier motivo, seguimos con los párrafos
+        # originales — preferimos un libro con TOC duplicado a no entregar nada.
+        print(f'[docx_parser] toc_filter ERROR: {e} — '
+              f'continuando con párrafos originales', flush=True)
+        parrafos_limpios = list(doc.paragraphs)
+    finally:
+        if _tmp_toc_path:
+            try:
+                os.unlink(_tmp_toc_path)
+            except Exception:
+                pass
+
     ms = Manuscrito()
 
     # Metadatos del core (solo si tienen sentido — no artículos sueltos)
@@ -202,9 +257,12 @@ def parsear_docx(src) -> Manuscrito:
         ms.autor  = cp.author
 
     # Recoger todos los párrafos (incluidos vacíos para detectar páginas en blanco)
-    parrs = [(i, p) for i, p in enumerate(doc.paragraphs)]
+    # NOTA: usamos parrafos_limpios (tras filtrado de TOC), no doc.paragraphs
+    parrs = [(i, p) for i, p in enumerate(parrafos_limpios)]
 
-    # ── 1. Detectar y saltar índice/TOC inicial ───────────────────────────────
+    # ── 1. Detectar y saltar frontmatter (portadilla/créditos) ────────────────
+    # NOTA: el bloque TOC del autor ya fue eliminado por toc_filter arriba,
+    # esta heurística ahora solo se encarga de saltar portadilla y créditos.
     inicio = 0
     toc_fin = 0
     for idx, (_, p) in enumerate(parrs):

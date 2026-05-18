@@ -1379,14 +1379,7 @@ def _pagina1(d, asesora):
     story.append(_headline_precio(d))
     story.append(Spacer(1, 6))
     story.append(_tabla_producto(d))
-    story.append(Spacer(1, 10))
-    # Bloque "PROMOCIÓN Y MARKETING" (aparece siempre que precio_legal > 0)
-    bloque_serv = _bloque_servicios(d)
-    if bloque_serv:
-        story.extend(bloque_serv)
-        story.append(Spacer(1, 14))
-    else:
-        story.append(Spacer(1, 14))
+    story.append(Spacer(1, 14))
     bloque_cierre_p1 = _bloque_resumen(d) + [
         Spacer(1, 8),
         Paragraph(

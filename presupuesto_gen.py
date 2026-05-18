@@ -270,6 +270,34 @@ _DIMENSIONES_FORMATO = {
     'bolsillo': '11 × 18 cm',
 }
 
+
+def _get_formato(d):
+    """
+    Lectura tolerante del campo 'formato' del payload.
+    Acepta varios alias por si Lovable cambia el nombre del campo o lo manda
+    anidado dentro de 'especificaciones'.
+
+    Orden de búsqueda:
+      1. d['formato']
+      2. d['especificaciones']['formato']
+      3. d['tamano'] / d['tamaño']
+      4. d['size']
+    """
+    if not isinstance(d, dict):
+        return ''
+    for key in ('formato', 'tamano', 'tamaño', 'size'):
+        v = d.get(key)
+        if v:
+            return str(v).strip()
+    specs = d.get('especificaciones') or {}
+    if isinstance(specs, dict):
+        for key in ('formato', 'tamano', 'tamaño', 'size'):
+            v = specs.get(key)
+            if v:
+                return str(v).strip()
+    return ''
+
+
 def _dimensiones_formato(formato_str):
     """
     Devuelve las dimensiones del libro en cm a partir del nombre del formato.
@@ -478,12 +506,13 @@ def _cabecera(asesora, num_presupuesto, fecha, con_logo=True):
 
 
 def _bloque_cliente_asesora(d, asesora):
+    fmt = _get_formato(d)
     izq = Paragraph(
         f'<font name="Helvetica" size="8" color="#666666">CLIENTE</font><br/>'
         f'<font name="Helvetica-Bold" size="11" color="#222222">{d["cliente"]}</font><br/>'
         f'<font name="Helvetica" size="8.5" color="#222222">'
         f'Obra: <b>{d["obra"]}</b> · {d["genero"]} · {d["paginas"]} págs · '
-        f'Formato {d["formato"]}</font>',
+        f'Formato {fmt}</font>',
         S('cli','Helvetica',8.5,12,TEXT))
     der = Paragraph(
         f'<font name="Helvetica" size="8" color="#666666">ASESORA EDITORIAL</font><br/>'
@@ -561,12 +590,13 @@ def _tabla_producto(d):
     lineas = [f'<b>Título del libro:</b> {d["obra"]}']
 
     fmt_partes = []
-    if d.get('formato'):
-        dim = _dimensiones_formato(d['formato'])
+    fmt_val = _get_formato(d)
+    if fmt_val:
+        dim = _dimensiones_formato(fmt_val)
         if dim:
-            fmt_partes.append(f'<b>Formato:</b> {d["formato"]} ({dim})')
+            fmt_partes.append(f'<b>Formato:</b> {fmt_val} ({dim})')
         else:
-            fmt_partes.append(f'<b>Formato:</b> {d["formato"]}')
+            fmt_partes.append(f'<b>Formato:</b> {fmt_val}')
     if color_int:
         fmt_partes.append(f'<b>Interior:</b> {color_int}')
     if fmt_partes:
@@ -1414,6 +1444,27 @@ def _pagina3(d, asesora):
 # ── Función principal ────────────────────────────────────────────────────────
 def generar_presupuesto(d):
     asesora = _resolver_asesora(d.get('asesora', 'laura'))
+
+    # ── Log de diagnóstico: lo que llega del frontend ────────────────────────
+    # Útil para depurar si Lovable manda campos con nombres inesperados o
+    # valores por defecto incorrectos. Se ve en los logs de Railway.
+    print(
+        f'[presupuesto] payload recibido: '
+        f"asesora={d.get('asesora')!r} "
+        f"cliente={d.get('cliente')!r} "
+        f"formato={_get_formato(d)!r} "
+        f"raw_formato={d.get('formato')!r} "
+        f"cantidad={d.get('cantidad')} "
+        f"precio_unitario={d.get('precio_unitario')} "
+        f"precio_maquetacion={d.get('precio_maquetacion')} "
+        f"precio_legal={d.get('precio_legal')} "
+        f"precio_correccion={d.get('precio_correccion')} "
+        f"sello_editorial={d.get('sello_editorial')} "
+        f"deposito_legal={d.get('deposito_legal')} "
+        f"pvp_libreria={d.get('pvp_libreria')} "
+        f"venta_libreria_cantidad={d.get('venta_libreria_cantidad')} "
+        f"venta_amazon_cantidad={d.get('venta_amazon_cantidad')}",
+        flush=True)
 
     t = _calcular_totales(d)
     d['_total_final'] = t['total_final']

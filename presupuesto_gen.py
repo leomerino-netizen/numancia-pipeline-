@@ -93,12 +93,38 @@ def _normalizar_asesora_slug(asesora):
     return 'laura'
 
 
-LOGO_PATH = _find([
+LOGO_CANDIDATES = [
     'fotos/logo_numancia.png',
     'logo_numancia.png',
+    'fotos/logotipo_editorial_numancia-1024x187-1.png',
+    'logotipo_editorial_numancia-1024x187-1.png',
     'logotipo-editorial-numancia-apaisado-color-hexadecimal.png',
     'Fotos/logotipo-editorial-numancia-apaisado-color-hexadecimal.png',
-])
+]
+
+def _find_logo():
+    """
+    Localiza el archivo del logo de Editorial Numancia.
+    Estrategia:
+      1. Probar nombres conocidos exactos (lista LOGO_CANDIDATES).
+      2. Si no aparece, buscar con glob cualquier *logo*numancia*.png
+         en la raíz del proyecto o en fotos/.
+    Devuelve '' si no encuentra nada.
+    """
+    import glob as _glob
+    for c in LOGO_CANDIDATES:
+        p = os.path.join(_HERE, c)
+        if os.path.isfile(p):
+            return p
+    for pat in ('*logo*numancia*.png', 'fotos/*logo*numancia*.png',
+                'Fotos/*logo*numancia*.png'):
+        matches = _glob.glob(os.path.join(_HERE, pat))
+        if matches:
+            return matches[0]
+    return ''
+
+
+LOGO_PATH = _find_logo()
 
 
 ASESORAS = {
@@ -167,6 +193,59 @@ def _aplicar_mascara_circular(ruta_foto, diametro_px=400):
             (diametro_px, diametro_px), (255, 255, 255, 0))
         resultado.paste(im, (0, 0), mascara)
         buf = io.BytesIO(); resultado.save(buf, format='PNG')
+        return buf.getvalue()
+
+
+def _logo_con_fondo_transparente(path, tolerancia=10):
+    """
+    Devuelve bytes PNG del logo con el fondo opaco uniforme convertido en
+    transparente. Útil cuando el logo viene como RGB sin canal alpha.
+
+    Algoritmo:
+      1. Si el PNG ya tiene canal alpha (RGBA), se devuelve sin cambios.
+      2. Si es RGB, se mira el color de las 4 esquinas. Si son uniformes
+         (mismo color con la tolerancia dada), ese es el color de fondo
+         y se convierten todos los píxeles parecidos a transparentes.
+      3. Si las esquinas no son uniformes, no se modifica (no es seguro
+         deducir el fondo).
+
+    La tolerancia es deliberadamente baja (10) para no comerse contenido
+    interno del logo de tonalidades parecidas (por ejemplo, sombras
+    oscuras dentro de un icono).
+    """
+    from PIL import Image as PILImage
+    with PILImage.open(path) as im:
+        if im.mode == 'RGBA':
+            buf = io.BytesIO(); im.save(buf, format='PNG')
+            return buf.getvalue()
+        im = im.convert('RGBA')
+        w, h = im.size
+        esquinas = [
+            im.getpixel((0, 0)),
+            im.getpixel((w - 1, 0)),
+            im.getpixel((0, h - 1)),
+            im.getpixel((w - 1, h - 1)),
+        ]
+        r0, g0, b0 = esquinas[0][:3]
+        uniforme = all(
+            abs(c[0] - r0) <= tolerancia and
+            abs(c[1] - g0) <= tolerancia and
+            abs(c[2] - b0) <= tolerancia
+            for c in esquinas
+        )
+        if not uniforme:
+            buf = io.BytesIO(); im.save(buf, format='PNG')
+            return buf.getvalue()
+        # Aplicar transparencia a píxeles dentro de la tolerancia del fondo
+        pixels = im.load()
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = pixels[x, y]
+                if (abs(r - r0) <= tolerancia and
+                    abs(g - g0) <= tolerancia and
+                    abs(b - b0) <= tolerancia):
+                    pixels[x, y] = (r, g, b, 0)
+        buf = io.BytesIO(); im.save(buf, format='PNG')
         return buf.getvalue()
 
 
@@ -302,17 +381,24 @@ def _hacer_canvas(num_presupuesto, cliente):
 def _cabecera(asesora, num_presupuesto, fecha, con_logo=True):
     items = []
 
-    if con_logo and os.path.isfile(LOGO_PATH):
+    izq = None
+    if con_logo and LOGO_PATH and os.path.isfile(LOGO_PATH):
         logo_h = 16*mm
         try:
             from PIL import Image as PIL
             with PIL.open(LOGO_PATH) as _i:
                 ratio = _i.width / _i.height
             logo_w = min(logo_h * ratio, W_DOC * 0.50)
-        except Exception:
-            logo_w = 50*mm
-        izq = Image(LOGO_PATH, width=logo_w, height=logo_h)
-    else:
+            # Procesar el PNG para añadir transparencia si tiene fondo opaco.
+            logo_bytes = _logo_con_fondo_transparente(LOGO_PATH)
+            izq = Image(io.BytesIO(logo_bytes),
+                        width=logo_w, height=logo_h)
+        except Exception as e:
+            print(f'[presupuesto] error procesando logo ({e}), '
+                  f'fallback a texto', flush=True)
+            izq = None
+
+    if izq is None:
         izq = Paragraph(
             '<font name="Helvetica-Bold" size="14" color="#1F3D6B">'
             'Editorial Numancia</font><br/>'
@@ -514,8 +600,7 @@ def _bloque_servicios(d):
     mostrar_leg = pl > 0          # antes: bool(leg_items) and pl > 0
     if mostrar_leg and not leg_items:
         leg_items = [
-            'Promoción del libro en RR.SS., book trailer, '
-            'entrevistas, podcast, etc. (según lo contratado)'
+            'Pack de promoción y marketing de tu libro'
         ]
     if not (mostrar_maq or mostrar_leg):
         return []
@@ -952,17 +1037,48 @@ def _bloque_amortizacion(d):
     - Campo principal: `pvp_libreria` (€, IVA 4% INCLUIDO) — se usa tal cual
     - Fallback: `pvp_libro` (€, IVA 4% incluido) para payloads antiguos
     - Sin caché: cada llamada recalcula los valores
+
+    Depósito legal (sello editorial Numancia):
+    Cuando el autor contrata el sello, 4 ejemplares se destinan al depósito
+    legal de la Biblioteca de Catalunya y NO pueden venderse. El porcentaje
+    de amortización se calcula sobre la tirada DISPONIBLE (cantidad − 4),
+    no sobre la tirada total.
+
+    El frontend nuevo envía deposito_legal, cantidad_disponible y
+    libros_amortizar. Si no llegan (cliente antiguo), se recalculan aquí.
     """
     total_final = d['_total_final']
     cantidad    = d['cantidad']
-    pvp_autor   = d.get('pvp_libreria')
+
+    # ── Depósito legal + tirada disponible (con fallback de compatibilidad) ──
+    deposito_legal = d.get('deposito_legal')
+    if deposito_legal is None:
+        deposito_legal = 4 if d.get('sello_editorial') else 0
+    deposito_legal = int(deposito_legal or 0)
+
+    cantidad_disponible = d.get('cantidad_disponible')
+    if cantidad_disponible is None:
+        cantidad_disponible = max(0, cantidad - deposito_legal)
+    cantidad_disponible = int(cantidad_disponible or 0)
+
+    pvp_autor = d.get('pvp_libreria')
     if pvp_autor is None:
         pvp_autor = d.get('pvp_libro', 20.70)
-    pvp_autor   = round(float(pvp_autor or 20.70), 2)
-    libros      = math.ceil(total_final / pvp_autor) if pvp_autor else 0
-    libros      = min(libros, max(cantidad, libros))
-    pct         = min(100, (libros / cantidad) * 100) if cantidad else 0
-    restantes   = max(0, cantidad - libros)
+    pvp_autor = round(float(pvp_autor or 20.70), 2)
+
+    # libros_amortizar viene del frontend; fallback al cálculo local
+    libros = d.get('libros_amortizar')
+    if libros is None or int(libros or 0) <= 0:
+        libros = math.ceil(total_final / pvp_autor) if pvp_autor else 0
+    libros = int(libros or 0)
+
+    # Denominador del % de amortización:
+    #  - Con sello editorial: cantidad_disponible (excluye los 4 del depósito)
+    #  - Sin sello editorial: cantidad total (comportamiento histórico)
+    denominador = cantidad_disponible if deposito_legal > 0 else cantidad
+    libros      = min(libros, max(denominador, libros))
+    pct         = min(100, (libros / denominador) * 100) if denominador else 0
+    restantes   = max(0, denominador - libros)
     beneficio_si_vende_todo = round(restantes * pvp_autor, 2)
 
     items = []
@@ -972,9 +1088,16 @@ def _bloque_amortizacion(d):
         S('amt','Helvetica-Bold',12,15,NAVY,spaceBefore=4,spaceAfter=2))
     subtitulo = Paragraph(
         f'<font name="Helvetica-Oblique" size="8.5" color="#666666">'
-        f'100% de las ventas para el autor · PVP '
-        f'{_fmt_eur(pvp_autor)} (IVA 4% incluido)</font>',
+        f'PVP {_fmt_eur(pvp_autor)} (IVA 4% incluido)</font>',
         S('ams','Helvetica-Oblique',8.5,12,GREY_TXT,spaceAfter=8))
+
+    # Texto interno del hero adaptado según haya o no depósito legal
+    if deposito_legal > 0:
+        hero_linea_inferior = (f'de tu tirada disponible de {cantidad_disponible} '
+                               f'({pct:.0f}% de la edición)')
+    else:
+        hero_linea_inferior = (f'de los {cantidad} ejemplares de tu tirada '
+                               f'({pct:.0f}% de la edición)')
 
     hero_izq = [
         Paragraph('<font name="Helvetica-Bold" size="8" color="#FFFFFF">'
@@ -984,8 +1107,7 @@ def _bloque_amortizacion(d):
                   f'{libros}</font>',
             S('h2','Helvetica-Bold',48,52,BLANCO,spaceBefore=2)),
         Paragraph(f'<font name="Helvetica" size="8.5" color="#FFFFFF">'
-                  f'de los {cantidad} ejemplares de tu tirada '
-                  f'({pct:.0f}% de la edición)</font>',
+                  f'{hero_linea_inferior}</font>',
             S('h3','Helvetica',8.5,11,BLANCO,spaceBefore=4)),
     ]
     hero_der = [
@@ -1013,14 +1135,48 @@ def _bloque_amortizacion(d):
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
         ('LINEAFTER',(0,0),(0,-1),0.4, colors.HexColor('#3D5680')),
     ]))
-    items.append(KeepTogether([titulo, subtitulo, hero]))
+
+    # Frase informativa explícita debajo del hero (solo si hay depósito legal)
+    bloque_hero = [titulo, subtitulo, hero]
+    if deposito_legal > 0:
+        frase_deposito = Paragraph(
+            f'Vendiendo solo <b>{libros}</b> ejemplares de tu tirada disponible '
+            f'de <b>{cantidad_disponible}</b> (tirada {cantidad} − '
+            f'{deposito_legal} depósito legal Biblioteca de Catalunya) '
+            f'(<b>{pct:.0f}%</b>) recuperas toda tu inversión.',
+            S('dl','Helvetica',8.5,12,TEXT,TA_LEFT,
+              spaceBefore=8, spaceAfter=2,
+              leftIndent=4, rightIndent=4))
+        bloque_hero.append(frase_deposito)
+
+    # Nota destacada — SIEMPRE presente (lleve o no sello editorial).
+    # Usa &#160; (nbsp) entre "100" y "%" para mantenerlos juntos en la línea.
+    nota_ganancias = Paragraph(
+        'El <b>100&#160;%</b> de las ganancias de las ventas en la '
+        '<b>Librería Numancia</b> son para el autor.',
+        S('nlg','Helvetica',8.5,12,TEXT,TA_LEFT,
+          spaceBefore=4, spaceAfter=2,
+          leftIndent=4, rightIndent=4))
+    bloque_hero.append(nota_ganancias)
+
+    items.append(KeepTogether(bloque_hero))
 
     if restantes > 0:
-        bonus = Paragraph(
-            f'A partir del ejemplar <b>{libros + 1}</b>, todo lo que vendas '
-            f'es <b>beneficio neto para ti</b>. Si vendes los <b>{cantidad}</b> '
-            f'ejemplares de la tirada ganarás hasta '
-            f'<b>{_fmt_eur(beneficio_si_vende_todo)}</b> adicionales.',
+        if deposito_legal > 0:
+            txt_bonus = (
+                f'A partir del ejemplar <b>{libros + 1}</b>, todo lo que vendas '
+                f'es <b>beneficio neto para ti</b>. Si vendes los '
+                f'<b>{cantidad_disponible}</b> ejemplares disponibles ganarás '
+                f'hasta <b>{_fmt_eur(beneficio_si_vende_todo)}</b> adicionales.'
+            )
+        else:
+            txt_bonus = (
+                f'A partir del ejemplar <b>{libros + 1}</b>, todo lo que vendas '
+                f'es <b>beneficio neto para ti</b>. Si vendes los '
+                f'<b>{cantidad}</b> ejemplares de la tirada ganarás hasta '
+                f'<b>{_fmt_eur(beneficio_si_vende_todo)}</b> adicionales.'
+            )
+        bonus = Paragraph(txt_bonus,
             S('bn','Helvetica',8.5,12,TEXT,TA_LEFT,
               spaceBefore=6, spaceAfter=2,
               leftIndent=4, rightIndent=4))

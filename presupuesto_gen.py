@@ -511,7 +511,12 @@ def _bloque_servicios(d):
 
     # Si no hay ni un solo servicio en ninguna caja, no mostrar el bloque
     mostrar_maq = bool(maq_items) and pm > 0
-    mostrar_leg = bool(leg_items) and pl > 0
+    mostrar_leg = pl > 0          # antes: bool(leg_items) and pl > 0
+    if mostrar_leg and not leg_items:
+        leg_items = [
+            'Promoción del libro en RR.SS., book trailer, '
+            'entrevistas, podcast, etc. (según lo contratado)'
+        ]
     if not (mostrar_maq or mostrar_leg):
         return []
 
@@ -547,7 +552,7 @@ def _bloque_servicios(d):
         fila = Table([[
             _serv_box('MAQUETACIÓN Y DISEÑO EDITORIAL', maq_items, pm, WS),
             Spacer(5, 1),
-            _serv_box('SERVICIOS LEGALES Y DISTRIBUCIÓN', leg_items, pl, WS),
+            _serv_box('PROMOCIÓN Y MARKETING', leg_items, pl, WS),
         ]], colWidths=[WS, 5, WS])
         fila.setStyle(TableStyle([
             ('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0),
@@ -559,7 +564,7 @@ def _bloque_servicios(d):
         items.append(_serv_box('MAQUETACIÓN Y DISEÑO EDITORIAL',
                                maq_items, pm, W_DOC))
     elif mostrar_leg:
-        items.append(_serv_box('SERVICIOS LEGALES Y DISTRIBUCIÓN',
+        items.append(_serv_box('PROMOCIÓN Y MARKETING',
                                leg_items, pl, W_DOC))
     return items
 
@@ -590,7 +595,7 @@ def _bloque_resumen(d):
         ])
     if t['legales'] > 0:
         rows.append([
-            Paragraph('Servicios legales y distribución (pago único)',
+            Paragraph('Promoción y marketing (pago único)',
                       S('r3','Helvetica',9,12,TEXT)),
             Paragraph(_fmt_eur(t['legales']),
                       S('r3r','Helvetica',9,12,TEXT,TA_RIGHT))
@@ -697,12 +702,6 @@ def _bloque_pasos(d, asesora):
     pago70 = round(t['total_final'] * 0.70, 2)
 
     # ── Paso 3: cuerpo dinámico según servicios contratados ────────────────
-    # Reglas:
-    #  - Si precio_legal > 0  → se menciona ISBN/DL + 4 ejemplares a la BdC
-    #  - Si venta_libreria_cantidad > 0 → se menciona Librería Numancia
-    #  - Si venta_amazon_cantidad > 0   → se menciona Amazon
-    #  - Y = cantidad − 4(si DL) − libreria − amazon
-    #  - Si Y < 0 (reparto no cuadra) → silenciar el bloque del reparto
     cantidad   = d['cantidad']
     tiene_dl   = (d.get('precio_legal', 0) or 0) > 0
     vl_c       = int(d.get('venta_libreria_cantidad', 0) or 0)
@@ -715,14 +714,12 @@ def _bloque_pasos(d, asesora):
     amz_uds = va_c if tiene_amz else 0
     Y       = cantidad - bdc_uds - lib_uds - amz_uds
 
-    # Frase de pago + impresión (siempre presente)
     base = (
         'Revisas el ejemplar físico y lo validas como correcto o nos indicas '
         'qué corregir y el porqué. <b>Abonas el 70% restante</b> e imprimimos '
         f'los <b>{cantidad} ejemplares</b> de la tirada. '
     )
 
-    # Bloque del reparto (solo si Y >= 0 y hay al menos un destino)
     items_reparto = []
     if tiene_dl:
         items_reparto.append('<b>4 se envían a la Biblioteca de Catalunya</b>')
@@ -748,7 +745,6 @@ def _bloque_pasos(d, asesora):
             f'<b>Recibes en casa los {Y} ejemplares restantes.</b> '
         )
     elif tiene_dl and Y < 0:
-        # Aún así mencionamos ISBN/DL aunque no cuadre el reparto
         bloque_reparto = ('Una vez pagado, gestionamos el <b>ISBN oficial</b> '
                           'y el <b>Depósito Legal</b>. ')
     else:
@@ -897,10 +893,7 @@ def _bloque_cta_asesora(asesora):
             png_bytes = _aplicar_mascara_circular(foto_path, diametro_px=400)
             img_buf = io.BytesIO(png_bytes)
             img = Image(img_buf, width=32*mm, height=32*mm)
-            # Wrapper Table de 1 columna con ancho EXACTO del espacio interior
-            # (WR menos los 16 puntos de padding del t_ase: 8 izq + 8 der).
-            # ALIGN CENTER de la celda fuerza el centrado horizontal de la imagen.
-            inner_w = WR - 16  # mismas unidades (puntos) que el padding
+            inner_w = WR - 16
             img_wrap = Table([[img]], colWidths=[inner_w])
             img_wrap.setStyle(TableStyle([
                 ('ALIGN',(0,0),(-1,-1),'CENTER'),
@@ -962,7 +955,6 @@ def _bloque_amortizacion(d):
     """
     total_final = d['_total_final']
     cantidad    = d['cantidad']
-    # Lectura priorizando pvp_libreria. Ambos campos llegan ya con IVA incluido.
     pvp_autor   = d.get('pvp_libreria')
     if pvp_autor is None:
         pvp_autor = d.get('pvp_libro', 20.70)
@@ -1040,57 +1032,25 @@ def _bloque_amortizacion(d):
 def _bloque_recompra(d):
     """
     Bloque "Si necesitas más ejemplares" — opciones de reimpresión.
-
-    ⚠️ La sección SIEMPRE aparece en el presupuesto (siempre se ofrece
-    al autor la opción de reimpresión). Solo los números son editables.
-
-    Acepta los campos del frontend (todos opcionales):
-
-    Formato campos planos por fila (preferido — Lovable):
-    - reimpresion_meses (int, default 12)
-    - reimpresion_descuento_pct (number, default 15)
-    - reimpresion_cantidad_1 (int, default 50)
-    - reimpresion_precio_1 (number) — si es 0/None se calcula:
-        precio_base × (1 - descuento_pct/100)
-    - reimpresion_cantidad_2 (int, default 100)
-    - reimpresion_precio_2 (number) — si es 0/None se calcula igual
-
-    Formato lista (retrocompatibilidad):
-    - reimpresion_cantidades (list[int])
-    - reimpresion_precio_unitario (number)
-
-    Formato antiguo (retrocompatibilidad total):
-    - recompra_uds, recompra_dto_pct
-
-    Total por fila = cantidad × precio_unitario (IVA 4% incluido).
+    La sección SIEMPRE aparece (siempre se ofrece reimpresión al autor).
     """
-    # Meses (default 12)
     meses = d.get('reimpresion_meses', 12) or 12
 
-    # Descuento: nuevo > antiguo > default 15
     dto_pct = d.get('reimpresion_descuento_pct')
     if dto_pct is None:
         dto_pct = d.get('recompra_dto_pct', 15)
     dto_pct = float(dto_pct or 0)
 
-    # Precio base del presupuesto (€ por ejemplar, IVA 4% incluido)
     precio_base = float(d.get('precio_unitario', 0) or 0)
 
-    # Lista alternativa por compatibilidad (formato anterior)
     lista_cants_alt = (d.get('reimpresion_cantidades')
                        or d.get('recompra_uds')
                        or [50, 100])
     precio_unitario_alt = d.get('reimpresion_precio_unitario')
 
-    # Default por defecto para cada fila (cuando no hay nada)
     DEFAULT_CANTS = [50, 100]
 
     def _resolver_fila(idx, cant_key, precio_key):
-        """
-        Devuelve siempre (cantidad>0, precio_unitario>0) para esta fila.
-        Cae a defaults cuando los campos vienen vacíos, en 0 o ausentes.
-        """
-        # Cantidad
         cant = d.get(cant_key)
         if cant is None or cant == '' or int(cant or 0) <= 0:
             if idx < len(lista_cants_alt) and int(lista_cants_alt[idx] or 0) > 0:
@@ -1099,16 +1059,14 @@ def _bloque_recompra(d):
                 cant = DEFAULT_CANTS[idx] if idx < len(DEFAULT_CANTS) else 50
         cant = int(cant)
 
-        # Precio unitario fila
         precio = d.get(precio_key)
         if precio is None or precio == '' or float(precio or 0) <= 0:
-            # Calcular con dto sobre precio base, o usar precio_unitario_alt
             if precio_unitario_alt and float(precio_unitario_alt or 0) > 0:
                 precio = float(precio_unitario_alt)
             elif precio_base > 0:
                 precio = round(precio_base * (1 - dto_pct / 100), 2)
             else:
-                precio = 0   # solo si todo viene en 0; raro
+                precio = 0
         precio = float(precio)
         return cant, precio
 
@@ -1179,14 +1137,7 @@ def _bloque_recompra(d):
 
 
 def _bloque_anotaciones(d):
-    """
-    Sección opcional al final del documento.
-    Acepta:
-    - `anotaciones` (campo nuevo de Lovable)
-    - `notas_adicionales` (campo antiguo, retrocompatibilidad)
-    Se renderiza solo si el texto resultante no está vacío.
-    Respeta saltos de línea del textarea.
-    """
+    """Sección opcional al final del documento."""
     texto = (d.get('anotaciones') or d.get('notas_adicionales') or '').strip()
     if not texto:
         return []
@@ -1212,8 +1163,14 @@ def _pagina1(d, asesora):
     story.append(_headline_precio(d))
     story.append(Spacer(1, 6))
     story.append(_tabla_producto(d))
-    story.append(Spacer(1, 14))
-    # Resumen económico + validez como cierre comercial de p1
+    story.append(Spacer(1, 10))
+    # Bloque "PROMOCIÓN Y MARKETING" (aparece siempre que precio_legal > 0)
+    bloque_serv = _bloque_servicios(d)
+    if bloque_serv:
+        story.extend(bloque_serv)
+        story.append(Spacer(1, 14))
+    else:
+        story.append(Spacer(1, 14))
     bloque_cierre_p1 = _bloque_resumen(d) + [
         Spacer(1, 8),
         Paragraph(
@@ -1226,10 +1183,6 @@ def _pagina1(d, asesora):
 
 
 def _pagina2(d, asesora):
-    """
-    P2 — Motivacional para el autor: cómo amortizar la publicación con la
-    Librería Numancia + opciones de recompra a precio reducido.
-    """
     story = []
     story += _cabecera(asesora, d['num_presupuesto'], d['fecha'], con_logo=True)
     story.extend(_bloque_amortizacion(d))
@@ -1238,10 +1191,6 @@ def _pagina2(d, asesora):
 
 
 def _pagina3(d, asesora):
-    """
-    P3 — Procesal: cómo aceptar la propuesta, garantías, notas y cierre
-    con el CTA para agendar llamada con la asesora.
-    """
     story = []
     story += _cabecera(asesora, d['num_presupuesto'], d['fecha'], con_logo=True)
     story.extend(_bloque_pasos(d, asesora))
@@ -1257,7 +1206,6 @@ def _pagina3(d, asesora):
 def generar_presupuesto(d):
     asesora = _resolver_asesora(d.get('asesora', 'laura'))
 
-    # Cálculo de totales centralizado
     t = _calcular_totales(d)
     d['_total_final'] = t['total_final']
 
@@ -1292,13 +1240,12 @@ if __name__ == '__main__':
         'formato':            'A5',
         'precio_unitario':    5.20,
         'cantidad':           150,
-        'descuento_pct':      0,            # 0 porque hay dto en maquetación
-        'precio_maquetacion': 160.00,       # precio final con dto
-        'precio_maquetacion_tarifa': 322.39, # tarifa original (para tachar)
+        'descuento_pct':      0,
+        'precio_maquetacion': 160.00,
+        'precio_maquetacion_tarifa': 322.39,
         'aplicar_descuento_maquetacion': True,
         'precio_legal':       120.00,
         'precio_correccion':  220.00,
-        # Venta online (cada canal se muestra solo si precio Y cantidad > 0)
         'venta_libreria_precio':   50.00,
         'venta_libreria_cantidad': 10,
         'venta_amazon_precio':     80.00,
@@ -1312,26 +1259,14 @@ if __name__ == '__main__':
         'servicios_maquetacion': [
             'Diseño de portada personalizada',
             'Maquetación interior profesional',
-            'Formato ePub para venta digital',
-            'Hasta 2 rondas de correcciones',
-            'Archivos listos para imprenta',
         ],
         'servicios_legales': [
             'Gestión del Sello Editorial Numancia',
             'ISBN oficial de Editorial Numancia',
-            'Depósito Legal · 4 ejemplares a la Biblioteca de Catalunya',
-            'Damos de alta tu tienda para la venta en la Librería Numancia '
-            '(100% para el autor) o Amazon, según lo contratado, para que '
-            'recuperes lo invertido y ganes dinero con tu publicación',
-            'Promoción en redes sociales de Editorial Numancia e inclusión '
-            'en el catálogo editorial',
-            'Los derechos de autor son el 100% de tu propiedad',
         ],
         'recompra_uds':       [50, 100],
         'recompra_dto_pct':   15,
-        # PVP de Librería editable por el asesor (€, IVA 4% INCLUIDO)
         'pvp_libreria':       20.70,
-        # Sección opcional al final del PDF (multilínea)
         'anotaciones':        '',
     }
     pdf_bytes = generar_presupuesto(datos)

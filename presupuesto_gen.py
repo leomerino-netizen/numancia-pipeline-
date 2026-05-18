@@ -259,6 +259,52 @@ def _fmt_eur(v):
     return f'€ {v:,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
 
 
+# Mapeo de nombres canónicos de formato a sus dimensiones reales en cm.
+# Si el formato contiene dimensiones embebidas (p.ej. "21x21" o "17×24"),
+# se extraen con regex; este dict solo cubre los nombres no numéricos.
+_DIMENSIONES_FORMATO = {
+    'a4':       '21 × 29,7 cm',
+    'a5':       '14,8 × 21 cm',
+    'a6':       '10,5 × 14,8 cm',
+    'b5':       '17,6 × 25 cm',
+    'bolsillo': '11 × 18 cm',
+}
+
+def _dimensiones_formato(formato_str):
+    """
+    Devuelve las dimensiones del libro en cm a partir del nombre del formato.
+
+    Ejemplos:
+      'A5'              → '14,8 × 21 cm'
+      '21x21'           → '21 × 21 cm'
+      '17×24'           → '17 × 24 cm'
+      'Cuadrado 21x21'  → '21 × 21 cm'  (extrae dimensiones embebidas)
+      'A5 (14,8x21)'    → '14,8 × 21 cm'
+      'Bolsillo'        → '11 × 18 cm'
+
+    Si no reconoce ni puede parsear las dimensiones, devuelve '' (en cuyo
+    caso el llamador no debe mostrar el paréntesis).
+    """
+    if not formato_str:
+        return ''
+    f = str(formato_str).strip().lower()
+    # 1) Si contiene dimensiones embebidas (NxM o N×M), extraerlas
+    import re as _re
+    m = _re.search(
+        r'(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)', f)
+    if m:
+        a, b = m.group(1), m.group(2)
+        return f'{a} × {b} cm'
+    # 2) Coincidencia directa con la tabla de canónicos
+    if f in _DIMENSIONES_FORMATO:
+        return _DIMENSIONES_FORMATO[f]
+    # 3) Coincidencia parcial (formato="Tapa dura A5", etc.)
+    for k, v in _DIMENSIONES_FORMATO.items():
+        if k in f:
+            return v
+    return ''
+
+
 def _calcular_totales(d):
     """
     Centraliza el cálculo de todos los importes del presupuesto.
@@ -516,7 +562,11 @@ def _tabla_producto(d):
 
     fmt_partes = []
     if d.get('formato'):
-        fmt_partes.append(f'<b>Formato:</b> {d["formato"]} (14,8 × 21 cm)')
+        dim = _dimensiones_formato(d['formato'])
+        if dim:
+            fmt_partes.append(f'<b>Formato:</b> {d["formato"]} ({dim})')
+        else:
+            fmt_partes.append(f'<b>Formato:</b> {d["formato"]}')
     if color_int:
         fmt_partes.append(f'<b>Interior:</b> {color_int}')
     if fmt_partes:
@@ -787,14 +837,22 @@ def _bloque_pasos(d, asesora):
     pago70 = round(t['total_final'] * 0.70, 2)
 
     # ── Paso 3: cuerpo dinámico según servicios contratados ────────────────
+    # IMPORTANTE: el depósito legal se infiere ahora del sello editorial,
+    # no de precio_legal (que pasó a representar Promoción y marketing).
     cantidad   = d['cantidad']
-    tiene_dl   = (d.get('precio_legal', 0) or 0) > 0
+
+    deposito_legal = d.get('deposito_legal')
+    if deposito_legal is None:
+        deposito_legal = 4 if d.get('sello_editorial') else 0
+    deposito_legal = int(deposito_legal or 0)
+    tiene_dl   = deposito_legal > 0
+
     vl_c       = int(d.get('venta_libreria_cantidad', 0) or 0)
     va_c       = int(d.get('venta_amazon_cantidad', 0) or 0)
     tiene_lib  = vl_c > 0
     tiene_amz  = va_c > 0
 
-    bdc_uds = 4 if tiene_dl else 0
+    bdc_uds = deposito_legal if tiene_dl else 0
     lib_uds = vl_c if tiene_lib else 0
     amz_uds = va_c if tiene_amz else 0
     Y       = cantidad - bdc_uds - lib_uds - amz_uds
@@ -807,7 +865,9 @@ def _bloque_pasos(d, asesora):
 
     items_reparto = []
     if tiene_dl:
-        items_reparto.append('<b>4 se envían a la Biblioteca de Catalunya</b>')
+        items_reparto.append(
+            f'<b>{deposito_legal} se envían a la Biblioteca de Catalunya</b>'
+        )
     if tiene_lib:
         items_reparto.append(f'<b>{lib_uds} a Librería Numancia</b>')
     if tiene_amz:

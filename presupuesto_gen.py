@@ -357,24 +357,40 @@ def _calcular_totales(d):
     mostrar_tachado_maq = aplicar_dto_maq and pm_tarifa > pm
 
     # ── Altas en canales de venta (precios fijos, lógica pack) ──────────
+    # Lectura tolerante: el frontend nuevo envía los costes con IVA incluido
+    # en campos *_coste. Si no llegan, se usan los hardcoded antiguos.
     vl_cant = int(d.get('venta_libreria_cantidad', 0) or 0)
     va_cant = int(d.get('venta_amazon_cantidad', 0) or 0)
     tiene_alta_libreria = vl_cant > 0
     tiene_alta_amazon   = va_cant > 0
     alta_combinada      = tiene_alta_libreria and tiene_alta_amazon
 
+    _pack_payload = d.get('pack_alta_coste')
+    _lib_payload  = d.get('alta_libreria_coste')
+    _amz_payload  = d.get('alta_amazon_coste')
+
     if alta_combinada:
-        pack_alta_cost     = 65.0
+        pack_alta_cost     = (float(_pack_payload)
+                              if _pack_payload is not None else 65.0)
         alta_libreria_cost = 0
         alta_amazon_cost   = 0
     else:
         pack_alta_cost     = 0
-        alta_libreria_cost = 25.0 if tiene_alta_libreria else 0
-        alta_amazon_cost   = 50.0 if tiene_alta_amazon else 0
+        alta_libreria_cost = ((float(_lib_payload)
+                               if _lib_payload is not None else 25.0)
+                              if tiene_alta_libreria else 0)
+        alta_amazon_cost   = ((float(_amz_payload)
+                               if _amz_payload is not None else 50.0)
+                              if tiene_alta_amazon else 0)
 
     # ── Gestión Sello Editorial Numancia ────────────────────────────────
-    sello_editorial      = bool(d.get('sello_editorial', False))
-    sello_editorial_cost = 45.0 if sello_editorial else 0
+    sello_editorial = bool(d.get('sello_editorial', False))
+    _sello_payload  = d.get('sello_coste')
+    if sello_editorial:
+        sello_editorial_cost = (float(_sello_payload)
+                                if _sello_payload is not None else 45.0)
+    else:
+        sello_editorial_cost = 0
 
     altas_total = pack_alta_cost + alta_libreria_cost + alta_amazon_cost + sello_editorial_cost
 
@@ -548,7 +564,7 @@ def _headline_precio(d):
         f'Tu libro te sale a</font> '
         f'<font size="13">{precio_html}</font> '
         f'<font name="Helvetica" size="11" color="#666666">'
-        f'por ejemplar (IVA 4% incluido · todo incluido)</font>',
+        f'por ejemplar (IVA 4 % incluido · todo incluido)</font>',
         S('hl','Helvetica-Bold',13,18,TEXT,TA_LEFT,spaceBefore=4,spaceAfter=4))
 
 
@@ -753,14 +769,14 @@ def _bloque_resumen(d):
         else:
             maq_html = _fmt_eur(t['maquetacion'])
         rows.append([
-            Paragraph('Maquetación y diseño editorial (pago único)',
+            Paragraph('Maquetación y diseño editorial (pago único, IVA incl.)',
                       S('r2','Helvetica',9,12,TEXT)),
             Paragraph(maq_html,
                       S('r2r','Helvetica',9,12,TEXT,TA_RIGHT))
         ])
     if t['legales'] > 0:
         rows.append([
-            Paragraph('Promoción y marketing (pago único)',
+            Paragraph('Promoción y marketing (pago único, IVA incl.)',
                       S('r3','Helvetica',9,12,TEXT)),
             Paragraph(_fmt_eur(t['legales']),
                       S('r3r','Helvetica',9,12,TEXT,TA_RIGHT))
@@ -768,7 +784,7 @@ def _bloque_resumen(d):
     # ── Altas en canales (pack combinado o individuales) ──────────────
     if t['alta_combinada']:
         rows.append([
-            Paragraph(f'Pack alta Librería Numancia + Amazon',
+            Paragraph(f'Pack alta Librería Numancia + Amazon (IVA incl.)',
                       S('rpack','Helvetica',9,12,TEXT)),
             Paragraph(_fmt_eur(t['pack_alta_cost']),
                       S('rpackr','Helvetica',9,12,TEXT,TA_RIGHT))
@@ -776,14 +792,14 @@ def _bloque_resumen(d):
     else:
         if t['tiene_alta_libreria']:
             rows.append([
-                Paragraph(f'Alta en Librería Numancia',
+                Paragraph(f'Alta en Librería Numancia (IVA incl.)',
                           S('rvl','Helvetica',9,12,TEXT)),
                 Paragraph(_fmt_eur(t['alta_libreria_cost']),
                           S('rvlr','Helvetica',9,12,TEXT,TA_RIGHT))
             ])
         if t['tiene_alta_amazon']:
             rows.append([
-                Paragraph(f'Alta en Amazon',
+                Paragraph(f'Alta en Amazon (IVA incl.)',
                           S('rva','Helvetica',9,12,TEXT)),
                 Paragraph(_fmt_eur(t['alta_amazon_cost']),
                           S('rvar','Helvetica',9,12,TEXT,TA_RIGHT))
@@ -791,14 +807,14 @@ def _bloque_resumen(d):
     # ── Gestión Sello Editorial ─────────────────────────────────────────
     if t['sello_editorial']:
         rows.append([
-            Paragraph('Gestión Sello Editorial Numancia',
+            Paragraph('Gestión Sello Editorial Numancia (IVA incl.)',
                       S('rsello','Helvetica',9,12,TEXT)),
             Paragraph(_fmt_eur(t['sello_editorial_cost']),
                       S('rsellor','Helvetica',9,12,TEXT,TA_RIGHT))
         ])
     if t['correccion'] > 0:
         rows.append([
-            Paragraph('Corrección ortotipográfica y de estilo (pago único)',
+            Paragraph('Corrección ortotipográfica y de estilo (pago único, IVA incl.)',
                       S('r3c','Helvetica',9,12,TEXT)),
             Paragraph(_fmt_eur(t['correccion']),
                       S('r3cr','Helvetica',9,12,TEXT,TA_RIGHT))
@@ -807,7 +823,7 @@ def _bloque_resumen(d):
     # Subtotal sólo si hay descuento global del payload (descuento_pct > 0)
     if t['descuento_pct'] > 0:
         rows.append([
-            Paragraph('<b>Subtotal</b> (IVA 4% incluido)',
+            Paragraph('<b>Subtotal</b> (IVA 4 % incluido)',
                       S('r4','Helvetica-Bold',9,12,TEXT)),
             Paragraph(f'<b>{_fmt_eur(t["subtotal_full"])}</b>',
                       S('r4r','Helvetica-Bold',9,12,TEXT,TA_RIGHT))
@@ -819,14 +835,14 @@ def _bloque_resumen(d):
                       S('r5r','Helvetica',9,12,GREY_TXT,TA_RIGHT))
         ])
         rows.append([
-            Paragraph('<b>TOTAL CON DESCUENTO (IVA 4% incluido)</b>',
+            Paragraph('<b>TOTAL CON DESCUENTO (IVA 4 % incluido)</b>',
                       S('r6','Helvetica-Bold',10,13,TEXT)),
             Paragraph(f'<b>{_fmt_eur(t["total_final"])}</b>',
                       S('r6r','Helvetica-Bold',13,16,NAVY,TA_RIGHT)),
         ])
     else:
         rows.append([
-            Paragraph('<b>TOTAL (IVA 4% incluido)</b>',
+            Paragraph('<b>TOTAL (IVA 4 % incluido)</b>',
                       S('r6','Helvetica-Bold',10,13,TEXT)),
             Paragraph(f'<b>{_fmt_eur(t["total_final"])}</b>',
                       S('r6r','Helvetica-Bold',13,16,NAVY,TA_RIGHT)),
@@ -1125,7 +1141,7 @@ def _bloque_amortizacion(d):
     """
     PVP del libro editable desde Lovable.
     - Campo principal: `pvp_libreria` (€, IVA 4% INCLUIDO) — se usa tal cual
-    - Fallback: `pvp_libro` (€, IVA 4% incluido) para payloads antiguos
+    - Fallback: `pvp_libro` (€, IVA 4 % incluido) para payloads antiguos
     - Sin caché: cada llamada recalcula los valores
 
     Depósito legal (sello editorial Numancia):
@@ -1178,7 +1194,7 @@ def _bloque_amortizacion(d):
         S('amt','Helvetica-Bold',12,15,NAVY,spaceBefore=4,spaceAfter=2))
     subtitulo = Paragraph(
         f'<font name="Helvetica-Oblique" size="8.5" color="#666666">'
-        f'PVP {_fmt_eur(pvp_autor)} (IVA 4% incluido)</font>',
+        f'PVP {_fmt_eur(pvp_autor)} (IVA 4 % incluido)</font>',
         S('ams','Helvetica-Oblique',8.5,12,GREY_TXT,spaceAfter=8))
 
     # Texto interno del hero adaptado según haya o no depósito legal
@@ -1375,7 +1391,7 @@ def _bloque_recompra(d):
     nota = Paragraph(
         '<font name="Helvetica-Oblique" size="8" color="#666666">'
         'Importes calculados sobre el precio unitario de impresión '
-        '(sin incluir maquetación ni servicios editoriales). IVA 4% incluido.</font>',
+        '(sin incluir maquetación ni servicios editoriales). IVA 4 % incluido.</font>',
         S('rcn','Helvetica-Oblique',8,11,GREY_TXT,TA_LEFT,spaceBefore=4))
 
     items.append(KeepTogether([titulo, intro, tabla, nota]))
@@ -1460,6 +1476,11 @@ def generar_presupuesto(d):
         f"precio_legal={d.get('precio_legal')} "
         f"precio_correccion={d.get('precio_correccion')} "
         f"sello_editorial={d.get('sello_editorial')} "
+        f"sello_coste={d.get('sello_coste')} "
+        f"pack_alta_coste={d.get('pack_alta_coste')} "
+        f"alta_libreria_coste={d.get('alta_libreria_coste')} "
+        f"alta_amazon_coste={d.get('alta_amazon_coste')} "
+        f"iva_incluido={d.get('iva_incluido')} "
         f"deposito_legal={d.get('deposito_legal')} "
         f"pvp_libreria={d.get('pvp_libreria')} "
         f"venta_libreria_cantidad={d.get('venta_libreria_cantidad')} "

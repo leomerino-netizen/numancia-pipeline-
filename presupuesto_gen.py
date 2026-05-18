@@ -156,7 +156,7 @@ ASESORAS = {
         'calendario_url': 'https://printcolorweb.zohobookings.eu/#/juan',
     },
     'nancy': {
-        'nombre': 'Nancy', 'iniciales': 'NA', 'ext': '285',
+        'nombre': 'Nancy', 'iniciales': 'NA', 'ext': '280',
         'email': 'info@editorialnumancia.com',
         'horario': 'Lunes a viernes · 9:00 a 14:00 h',
         'foto': _find(['fotos/nancy-circ.png', 'fotos/nancy.jpg',

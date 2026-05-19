@@ -351,10 +351,21 @@ def _calcular_totales(d):
     pl     = d.get('precio_legal', 0) or 0
     pc     = d.get('precio_correccion', 0) or 0
 
-    # Maquetación con descuento (tachado)
-    aplicar_dto_maq = bool(d.get('aplicar_descuento_maquetacion', False))
-    pm_tarifa       = d.get('precio_maquetacion_tarifa', 0) or 0
-    mostrar_tachado_maq = aplicar_dto_maq and pm_tarifa > pm
+    # Maquetación con descuento (tachado) y bonificación al 100%.
+    # La tarifa (precio_maquetacion_tarifa) viene SIN IVA → la pasamos a con-IVA
+    # para poder compararla y mostrarla coherente con precio_maquetacion.
+    aplicar_dto_maq         = bool(d.get('aplicar_descuento_maquetacion', False))
+    pm_tarifa               = d.get('precio_maquetacion_tarifa', 0) or 0
+    pm_tarifa_con_iva       = round(pm_tarifa * 1.04, 2) if pm_tarifa > 0 else 0
+    # Bonificada al 100 %: precio final 0 y hay una tarifa original > 0.
+    maquetacion_bonificada  = (pm == 0 and pm_tarifa > 0)
+    # Tachado en dos escenarios:
+    #  · Bonificada al 100 %.
+    #  · Descuento normal: aplicar_dto=True y tarifa>precio.
+    mostrar_tachado_maq = (
+        maquetacion_bonificada or
+        (aplicar_dto_maq and pm_tarifa_con_iva > pm)
+    )
 
     # ── Altas en canales de venta (precios fijos, lógica pack) ──────────
     # Lectura tolerante: el frontend nuevo envía los costes con IVA incluido
@@ -403,7 +414,9 @@ def _calcular_totales(d):
         'impresion_full':        impresion_full,
         'maquetacion':           pm,
         'maquetacion_tarifa':    pm_tarifa,
+        'maquetacion_tarifa_con_iva': pm_tarifa_con_iva,
         'mostrar_tachado_maq':   mostrar_tachado_maq,
+        'maquetacion_bonificada': maquetacion_bonificada,
         'legales':               pl,
         'correccion':            pc,
         # Altas y sello
@@ -759,11 +772,26 @@ def _bloque_resumen(d):
          Paragraph(_fmt_eur(t['impresion_full']),
                    S('r1r','Helvetica',9,12,TEXT,TA_RIGHT))],
     ]
-    if t['maquetacion'] > 0:
-        # Maquetación con tachado de la tarifa original si aplica
-        if t['mostrar_tachado_maq']:
+    # ── Línea de maquetación: 3 casos ──────────────────────────────────
+    #  · Bonificada al 100 %  → tarifa tachada + 0,00 € + leyenda
+    #  · Con descuento        → tarifa tachada + precio final
+    #  · Sin descuento        → solo precio
+    # Se muestra también cuando precio_maquetacion=0 si hay tarifa>0
+    # (caso bonificada), porque la línea es comercialmente relevante
+    # aunque no sume al subtotal.
+    mostrar_linea_maq = t['maquetacion'] > 0 or t['maquetacion_bonificada']
+    if mostrar_linea_maq:
+        if t['maquetacion_bonificada']:
             maq_html = (
-                f'<font color="#555555"><strike><b>{_fmt_eur(t["maquetacion_tarifa"])}</b></strike></font>'
+                f'<font color="#555555"><strike><b>'
+                f'{_fmt_eur(t["maquetacion_tarifa_con_iva"])}</b></strike></font>'
+                f'  <font color="#1F3D6B"><b>{_fmt_eur(0)}</b></font>'
+                f'  <font color="#1F3D6B">— Bonificada al 100&#160;%</font>'
+            )
+        elif t['mostrar_tachado_maq']:
+            maq_html = (
+                f'<font color="#555555"><strike><b>'
+                f'{_fmt_eur(t["maquetacion_tarifa_con_iva"])}</b></strike></font>'
                 f'  <font color="#1F3D6B"><b>{_fmt_eur(t["maquetacion"])}</b></font>'
             )
         else:

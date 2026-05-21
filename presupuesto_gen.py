@@ -351,6 +351,22 @@ def _calcular_totales(d):
     pl     = d.get('precio_legal', 0) or 0
     pc     = d.get('precio_correccion', 0) or 0
 
+    # ── Maquetación / portada aportadas por el cliente ──────────────────
+    # Cuando el autor aporta su propia maquetación, no se factura ni se
+    # imprime la línea de "Maquetación y diseño editorial". Si además NO
+    # aporta la portada, se factura "Diseño de portada" como pago único
+    # (precio_portada, con IVA incluido; default 120 €).
+    maquetacion_aportada_cliente = bool(d.get('maquetacion_aportada_cliente', False))
+    portada_aportada_cliente     = bool(d.get('portada_aportada_cliente', False))
+    if maquetacion_aportada_cliente:
+        pm = 0  # forzar 0, no se factura la maquetación
+
+    # Solo se factura portada cuando el autor APORTA maquetación pero NO
+    # aporta portada. Si aporta ambas (interior + portada) → 0 €.
+    incluir_portada = maquetacion_aportada_cliente and not portada_aportada_cliente
+    precio_portada  = float(d.get('precio_portada', 120.0) or 120.0)
+    precio_portada_cost = round(precio_portada, 2) if incluir_portada else 0
+
     # Maquetación con descuento (tachado) y bonificación al 100%.
     # La tarifa (precio_maquetacion_tarifa) viene SIN IVA → la pasamos a con-IVA
     # para poder compararla y mostrarla coherente con precio_maquetacion.
@@ -403,7 +419,8 @@ def _calcular_totales(d):
     else:
         sello_editorial_cost = 0
 
-    altas_total = pack_alta_cost + alta_libreria_cost + alta_amazon_cost + sello_editorial_cost
+    altas_total = (pack_alta_cost + alta_libreria_cost + alta_amazon_cost
+                   + sello_editorial_cost + precio_portada_cost)
 
     impresion_full = round(pu_imp * cant, 2)
     subtotal_full  = round(impresion_full + pm + pl + pc + altas_total, 2)
@@ -430,6 +447,11 @@ def _calcular_totales(d):
         'venta_amazon_cant':     va_cant,
         'sello_editorial':       sello_editorial,
         'sello_editorial_cost':  sello_editorial_cost,
+        # Maquetación / portada aportadas por el cliente
+        'maquetacion_aportada_cliente': maquetacion_aportada_cliente,
+        'portada_aportada_cliente':     portada_aportada_cliente,
+        'incluir_portada':              incluir_portada,
+        'precio_portada_cost':          precio_portada_cost,
         # Totales
         'subtotal_full':         subtotal_full,
         'descuento_pct':         dto,
@@ -779,7 +801,12 @@ def _bloque_resumen(d):
     # Se muestra también cuando precio_maquetacion=0 si hay tarifa>0
     # (caso bonificada), porque la línea es comercialmente relevante
     # aunque no sume al subtotal.
-    mostrar_linea_maq = t['maquetacion'] > 0 or t['maquetacion_bonificada']
+    # EXCEPCIÓN: si el autor aporta su propia maquetación, la línea NO
+    # aparece en absoluto (ni siquiera con tachado).
+    mostrar_linea_maq = (
+        not t['maquetacion_aportada_cliente']
+        and (t['maquetacion'] > 0 or t['maquetacion_bonificada'])
+    )
     if mostrar_linea_maq:
         if t['maquetacion_bonificada']:
             maq_html = (
@@ -801,6 +828,16 @@ def _bloque_resumen(d):
                       S('r2','Helvetica',9,12,TEXT)),
             Paragraph(maq_html,
                       S('r2r','Helvetica',9,12,TEXT,TA_RIGHT))
+        ])
+
+    # Línea de "Diseño de portada" — solo si el autor aporta interior pero
+    # NO aporta portada. Va inmediatamente después de la maquetación.
+    if t['incluir_portada']:
+        rows.append([
+            Paragraph('Diseño de portada (pago único, IVA incl.)',
+                      S('rport','Helvetica',9,12,TEXT)),
+            Paragraph(_fmt_eur(t['precio_portada_cost']),
+                      S('rportr','Helvetica',9,12,TEXT,TA_RIGHT))
         ])
     if t['legales'] > 0:
         rows.append([
@@ -1426,6 +1463,51 @@ def _bloque_recompra(d):
     return items
 
 
+def _bloque_condiciones_aportes_cliente(d):
+    """
+    Cláusulas legales cuando el autor aporta materiales propios (maquetación
+    y/o portada). Aparece como sección "Condiciones específicas" en P3,
+    justo antes del bloque de Anotaciones del asesor.
+
+    Se activa si:
+      · maquetacion_aportada_cliente=True (cláusula PDF/X-1a interior)
+      · portada_aportada_cliente=True   (cláusula PDF/X-1a cubierta)
+    Si ambos campos son False, no se renderiza nada.
+    """
+    maq_apor  = bool(d.get('maquetacion_aportada_cliente', False))
+    port_apor = bool(d.get('portada_aportada_cliente', False))
+    if not (maq_apor or port_apor):
+        return []
+
+    items = []
+    items.append(Spacer(1, 8))
+    titulo = Paragraph(
+        '<font name="Helvetica-Bold" size="11" color="#1F3D6B">'
+        'Condiciones específicas — materiales aportados por el autor</font>',
+        S('cet','Helvetica-Bold',11,14,NAVY,spaceBefore=2,spaceAfter=6))
+
+    parrafos = []
+    if maq_apor:
+        parrafos.append(Paragraph(
+            '· El autor entregará el archivo de maquetación final en '
+            '<b>PDF/X-1a</b> listo para imprenta. La editorial no realizará '
+            'correcciones tipográficas ni ajustes de paginación sobre dicho '
+            'archivo.',
+            S('ce1','Helvetica',9,12.5,TEXT,TA_JUSTIFY,
+              spaceBefore=2, spaceAfter=2)))
+    if port_apor:
+        parrafos.append(Paragraph(
+            '· El autor entregará el archivo de cubierta final (frontal, '
+            'contracubierta y lomo) en <b>PDF/X-1a CMYK 300&#160;dpi</b> con '
+            'sangres de 3&#160;mm. La editorial no realizará modificaciones '
+            'sobre dicho archivo.',
+            S('ce2','Helvetica',9,12.5,TEXT,TA_JUSTIFY,
+              spaceBefore=2, spaceAfter=2)))
+
+    items.append(KeepTogether([titulo] + parrafos))
+    return items
+
+
 def _bloque_anotaciones(d):
     """Sección opcional al final del documento."""
     texto = (d.get('anotaciones') or d.get('notas_adicionales') or '').strip()
@@ -1479,6 +1561,7 @@ def _pagina3(d, asesora):
     story.extend(_bloque_pasos(d, asesora))
     story.append(Spacer(1, 8))
     story.extend(_bloque_garantias())
+    story.extend(_bloque_condiciones_aportes_cliente(d))
     story.extend(_bloque_anotaciones(d))
     story.append(Spacer(1, 14))
     story.append(_bloque_cta_asesora(asesora))
@@ -1509,6 +1592,9 @@ def generar_presupuesto(d):
         f"alta_libreria_coste={d.get('alta_libreria_coste')} "
         f"alta_amazon_coste={d.get('alta_amazon_coste')} "
         f"iva_incluido={d.get('iva_incluido')} "
+        f"maquetacion_aportada_cliente={d.get('maquetacion_aportada_cliente')} "
+        f"portada_aportada_cliente={d.get('portada_aportada_cliente')} "
+        f"precio_portada={d.get('precio_portada')} "
         f"deposito_legal={d.get('deposito_legal')} "
         f"pvp_libreria={d.get('pvp_libreria')} "
         f"venta_libreria_cantidad={d.get('venta_libreria_cantidad')} "

@@ -794,51 +794,86 @@ def _bloque_resumen(d):
          Paragraph(_fmt_eur(t['impresion_full']),
                    S('r1r','Helvetica',9,12,TEXT,TA_RIGHT))],
     ]
-    # ── Línea de maquetación: 3 casos ──────────────────────────────────
-    #  · Bonificada al 100 %  → tarifa tachada + 0,00 € + leyenda
-    #  · Con descuento        → tarifa tachada + precio final
-    #  · Sin descuento        → solo precio
-    # Se muestra también cuando precio_maquetacion=0 si hay tarifa>0
-    # (caso bonificada), porque la línea es comercialmente relevante
-    # aunque no sume al subtotal.
-    # EXCEPCIÓN: si el autor aporta su propia maquetación, la línea NO
-    # aparece en absoluto (ni siquiera con tachado).
-    mostrar_linea_maq = (
-        not t['maquetacion_aportada_cliente']
-        and (t['maquetacion'] > 0 or t['maquetacion_bonificada'])
-    )
-    if mostrar_linea_maq:
+    # ── Maquetación + portada según aportes del cliente ────────────────
+    # 4 escenarios según los flags maquetacion_aportada_cliente y
+    # portada_aportada_cliente:
+    #   D · ambos False  → render normal con bonificada/descuento/sin descuento
+    #   A · ambos True   → 1 línea "Maquetación y diseño (aportados por el autor) — 0 €"
+    #   B · solo maq     → 2 líneas: interior 0 € + portada cobrada (precio_portada)
+    #   C · solo portada → 2 líneas: interior cobrado + portada 0 €
+    # En los casos A/B/C el importe 0 aparece SIN tachado y SIN leyenda
+    # "Bonificada al 100 %" — esa leyenda es exclusiva de bonificación
+    # comercial de la editorial, no de aporte del cliente.
+    maq_apor  = t['maquetacion_aportada_cliente']
+    port_apor = t['portada_aportada_cliente']
+
+    def _render_maq_normal():
+        """Render del default (caso D): 3 sub-casos del bloque maquetación."""
+        if not (t['maquetacion'] > 0 or t['maquetacion_bonificada']):
+            return None
         if t['maquetacion_bonificada']:
-            maq_html = (
+            return (
                 f'<font color="#555555"><strike><b>'
                 f'{_fmt_eur(t["maquetacion_tarifa_con_iva"])}</b></strike></font>'
                 f'  <font color="#1F3D6B"><b>{_fmt_eur(0)}</b></font>'
                 f'  <font color="#1F3D6B">— Bonificada al 100&#160;%</font>'
             )
-        elif t['mostrar_tachado_maq']:
-            maq_html = (
+        if t['mostrar_tachado_maq']:
+            return (
                 f'<font color="#555555"><strike><b>'
                 f'{_fmt_eur(t["maquetacion_tarifa_con_iva"])}</b></strike></font>'
                 f'  <font color="#1F3D6B"><b>{_fmt_eur(t["maquetacion"])}</b></font>'
             )
-        else:
-            maq_html = _fmt_eur(t['maquetacion'])
-        rows.append([
-            Paragraph('Maquetación y diseño editorial (pago único, IVA incl.)',
-                      S('r2','Helvetica',9,12,TEXT)),
-            Paragraph(maq_html,
-                      S('r2r','Helvetica',9,12,TEXT,TA_RIGHT))
-        ])
+        return _fmt_eur(t['maquetacion'])
 
-    # Línea de "Diseño de portada" — solo si el autor aporta interior pero
-    # NO aporta portada. Va inmediatamente después de la maquetación.
-    if t['incluir_portada']:
+    if maq_apor and port_apor:
+        # ── CASO A: autor aporta interior + portada ──────────────────
+        rows.append([
+            Paragraph('Maquetación y diseño editorial (aportados por el autor)',
+                      S('rmA','Helvetica',9,12,TEXT)),
+            Paragraph(_fmt_eur(0),
+                      S('rmAr','Helvetica',9,12,TEXT,TA_RIGHT))
+        ])
+    elif maq_apor and not port_apor:
+        # ── CASO B: autor aporta SOLO interior; editorial diseña portada ─
+        rows.append([
+            Paragraph('Maquetación del interior (aportada por el autor)',
+                      S('rmB1','Helvetica',9,12,TEXT)),
+            Paragraph(_fmt_eur(0),
+                      S('rmB1r','Helvetica',9,12,TEXT,TA_RIGHT))
+        ])
         rows.append([
             Paragraph('Diseño de portada (pago único, IVA incl.)',
-                      S('rport','Helvetica',9,12,TEXT)),
+                      S('rmB2','Helvetica',9,12,TEXT)),
             Paragraph(_fmt_eur(t['precio_portada_cost']),
-                      S('rportr','Helvetica',9,12,TEXT,TA_RIGHT))
+                      S('rmB2r','Helvetica',9,12,TEXT,TA_RIGHT))
         ])
+    elif port_apor and not maq_apor:
+        # ── CASO C: autor aporta SOLO portada; editorial maqueta interior ─
+        maq_html = _render_maq_normal()
+        if maq_html is not None:
+            rows.append([
+                Paragraph('Maquetación del interior (pago único, IVA incl.)',
+                          S('rmC1','Helvetica',9,12,TEXT)),
+                Paragraph(maq_html,
+                          S('rmC1r','Helvetica',9,12,TEXT,TA_RIGHT))
+            ])
+        rows.append([
+            Paragraph('Diseño de portada (aportada por el autor)',
+                      S('rmC2','Helvetica',9,12,TEXT)),
+            Paragraph(_fmt_eur(0),
+                      S('rmC2r','Helvetica',9,12,TEXT,TA_RIGHT))
+        ])
+    else:
+        # ── CASO D (default): editorial maqueta todo ─────────────────
+        maq_html = _render_maq_normal()
+        if maq_html is not None:
+            rows.append([
+                Paragraph('Maquetación y diseño editorial (pago único, IVA incl.)',
+                          S('r2','Helvetica',9,12,TEXT)),
+                Paragraph(maq_html,
+                          S('r2r','Helvetica',9,12,TEXT,TA_RIGHT))
+            ])
     if t['legales'] > 0:
         rows.append([
             Paragraph('Promoción y marketing (pago único, IVA incl.)',

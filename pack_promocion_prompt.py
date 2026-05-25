@@ -16,9 +16,9 @@ Uso típico desde el endpoint Flask /pack-promocion:
         genero='Novela histórica',
         url_libreria='https://libreria.editorialnumancia.com/libros/paris-1889',
     )
-    # pack es un dict con todos los campos del JSON_SCHEMA
+    # pack es un dict con todos los campos + bloque _meta con tokens y coste
 
-Coste estimado por llamada: ~2-3 € (Claude Sonnet, ~30k tokens entrada,
+Coste estimado por llamada: ~2-3 € (Claude Sonnet 4.5, ~30k tokens entrada,
 ~10k tokens salida). Tiempo: 30-90 segundos.
 """
 
@@ -32,6 +32,12 @@ MODEL = 'claude-sonnet-4-5'   # Mismo modelo que el resto del pipeline
 MAX_TOKENS = 12000             # Output generoso (28 publicaciones + 25 medios)
 TEMPERATURE = 0.4              # Marketing creativo pero fiel al libro
 MAX_CHARS_TEXTO_LIBRO = 80_000 # ~20k tokens, primeros 80k caracteres del libro
+
+# Tarifas Claude Sonnet 4.5 (USD por millón de tokens, oficial Anthropic)
+PRECIO_INPUT_USD_POR_MTOK  = 3.0
+PRECIO_OUTPUT_USD_POR_MTOK = 15.0
+# Conversión USD→EUR (aproximada, ajustable según tipo de cambio real)
+USD_A_EUR = 0.92
 
 
 # ── System prompt (estable, cacheable) ──────────────────────────────────────
@@ -152,73 +158,22 @@ Si el género del libro es claramente no-ficción profesional (ensayo, divulgaci
 Devuelve solo el JSON, sin texto antes ni después."""
 
 
-# ── JSON Schema (documentación; el modelo respeta el formato por instrucciones) ──
-JSON_SCHEMA_DOC = """
-{
-  "metadatos_detectados": {
-    "genero_refinado": str,
-    "publico_objetivo": str,
-    "tono_voz": str,
-    "comparables_mercado": [str, ...]
-  },
-  "sinopsis_corta": str,                    # 150-200 chars
-  "sinopsis_larga": str,                    # 800-1200 chars
-  "bio_autor_sugerida": str,                # 350-500 chars
-  "bio_autor_advertencia": str | null,
-  "cita_nuclear": {
-    "texto": str,
-    "tipo": "textual" | "adaptada",
-    "ubicacion": str | null
-  },
-  "citas_destacadas": [                     # exactamente 5
-    {"texto": str, "tipo": "textual" | "adaptada"}, ...
-  ],
-  "medios_objetivo": [                      # exactamente 25
-    {
-      "nombre": str,
-      "tipo": "blog_literario" | "podcast" | "instagram" | "premio" | "periodista" | "revista" | "newsletter",
-      "url_o_handle": str | null,
-      "por_que_encaja": str,
-      "ambito": "español" | "internacional"
-    }, ...
-  ],
-  "calendario_editorial_4_semanas": [       # exactamente 28
-    {
-      "dia": int,                           # 1..28
-      "semana": int,                        # 1..4
-      "tema_semana": str,
-      "canal": "instagram_feed" | "instagram_story" | "facebook" | "linkedin_autor" | "x_twitter",
-      "tipo": str,
-      "texto_sugerido": str,
-      "hashtags": [str, ...]
-    }, ...
-  ],
-  "descripcion_amazon_corta": str,          # 200-250 chars
-  "descripcion_amazon_larga": str,          # 1500-3000 chars con saltos \\n\\n
-  "email_lanzamiento_autor": {
-    "asunto": str,
-    "cuerpo": str                           # 400-700 chars
-  },
-  "post_linkedin_autor": str                # 300-500 chars
-}
-"""
-
-
 # ── Función principal ──────────────────────────────────────────────────────
 def generar_pack_promocion(
-    texto_libro: str,
-    titulo: str,
-    autor: str,
-    genero: str,
-    url_libreria: str,
+    texto_libro,
+    titulo,
+    autor,
+    genero,
+    url_libreria,
     *,
-    client: anthropic.Anthropic | None = None,
-    model: str = MODEL,
-    max_tokens: int = MAX_TOKENS,
-    temperature: float = TEMPERATURE,
-) -> dict:
+    client=None,
+    model=MODEL,
+    max_tokens=MAX_TOKENS,
+    temperature=TEMPERATURE,
+):
     """
-    Llama a Claude API y devuelve el dict con los 9 elementos del pack.
+    Llama a Claude API y devuelve el dict con los 9 elementos del pack
+    + un bloque _meta con tokens utilizados y coste estimado en EUR.
 
     Args:
         texto_libro: texto plano del libro (se truncará a MAX_CHARS_TEXTO_LIBRO).
@@ -231,12 +186,24 @@ def generar_pack_promocion(
         model, max_tokens, temperature: ajustables si quieres experimentar.
 
     Returns:
-        dict con los campos del JSON_SCHEMA_DOC.
+        dict con los campos del pack + bloque _meta:
+            {
+              "metadatos_detectados": {...},
+              "sinopsis_corta": "...",
+              ...
+              "_meta": {
+                "tokens_input": int,
+                "tokens_output": int,
+                "coste_usd": float,
+                "coste_eur": float,
+                "model": str
+              }
+            }
 
     Raises:
         anthropic.APIError si la API falla.
-        json.JSONDecodeError si el output no es JSON válido (anti-alucinación
-                             ya hace que sea muy raro, pero por si acaso).
+        json.JSONDecodeError si el output no es JSON válido.
+        ValueError si la respuesta carece de campos críticos.
     """
     if client is None:
         client = anthropic.Anthropic()  # usa ANTHROPIC_API_KEY del entorno
@@ -270,14 +237,14 @@ def generar_pack_promocion(
         system=SYSTEM_PROMPT,
         messages=[
             {'role': 'user',      'content': user_prompt},
-            {'role': 'assistant', 'content': '{'},  # prefill: fuerza JSON desde el primer carácter
+            {'role': 'assistant', 'content': '{'},  # prefill: fuerza JSON
         ],
     )
 
     # Reconstruir el JSON (el prefill '{' se añade al inicio del output)
     raw = '{' + response.content[0].text
     raw = raw.strip()
-    # Por si acaso el modelo añade ```json al inicio o ``` al final (no debería con prefill)
+    # Por si el modelo añade ```json al inicio o ``` al final (raro con prefill)
     if raw.startswith('```'):
         raw = raw.split('\n', 1)[1] if '\n' in raw else raw[3:]
     if raw.endswith('```'):
@@ -300,12 +267,29 @@ def generar_pack_promocion(
             f'[pack_promocion] respuesta incompleta, faltan campos: {faltantes}'
         )
 
+    # ── Calcular coste a partir de tokens reportados por la API ────────────
+    tokens_in  = response.usage.input_tokens
+    tokens_out = response.usage.output_tokens
+    coste_usd = (
+        tokens_in  * PRECIO_INPUT_USD_POR_MTOK  / 1_000_000
+        + tokens_out * PRECIO_OUTPUT_USD_POR_MTOK / 1_000_000
+    )
+    coste_eur = round(coste_usd * USD_A_EUR, 4)
+
+    pack['_meta'] = {
+        'model':         model,
+        'tokens_input':  tokens_in,
+        'tokens_output': tokens_out,
+        'coste_usd':     round(coste_usd, 4),
+        'coste_eur':     coste_eur,
+    }
+
     print(
         f'[pack_promocion] OK · {len(pack.get("citas_destacadas",[]))} citas, '
         f'{len(pack.get("medios_objetivo",[]))} medios, '
         f'{len(pack.get("calendario_editorial_4_semanas",[]))} publicaciones, '
-        f'usage_in={response.usage.input_tokens} '
-        f'usage_out={response.usage.output_tokens}',
+        f'tokens_in={tokens_in} tokens_out={tokens_out} '
+        f'coste_eur={coste_eur}',
         flush=True,
     )
 
@@ -316,7 +300,7 @@ def generar_pack_promocion(
 if __name__ == '__main__':
     # Necesita ANTHROPIC_API_KEY en el entorno
     texto = """[Aquí iría el texto extraído del PDF del libro.
-    En producción se llama a pdfplumber o pypdf desde el endpoint Flask
+    En producción se llama a pdfplumber o pdf_a_texto desde el endpoint Flask
     y se le pasa el resultado a generar_pack_promocion()].
 
     Era una mañana de enero, y París se desperezaba bajo el peso de su propia
@@ -342,4 +326,7 @@ if __name__ == '__main__':
     print(f'  Citas destacadas: {len(pack["citas_destacadas"])}')
     print(f'  Medios objetivo: {len(pack["medios_objetivo"])}')
     print(f'  Publicaciones: {len(pack["calendario_editorial_4_semanas"])}')
+    print(f'  Tokens: {pack["_meta"]["tokens_input"]} in / '
+          f'{pack["_meta"]["tokens_output"]} out')
+    print(f'  Coste: {pack["_meta"]["coste_eur"]:.4f} €')
     print(f'\nGuardado en: /tmp/pack_promocion_resultado.json')

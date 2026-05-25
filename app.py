@@ -1,6 +1,6 @@
 """
 Editorial Numancia — API de generación de documentos
-Endpoints: /presupuesto  /informe  /preview  /maqueta
+Endpoints: /presupuesto  /informe  /preview  /maqueta  /pack-promocion
 """
 import os, io, json, base64, traceback
 from flask import Flask, request, jsonify, send_file, abort
@@ -18,10 +18,12 @@ from corrector_aplicado import (
     get_job_resultado,
     limpiar_jobs_antiguos,
 )
+from pack_promocion_prompt import generar_pack_promocion
 
 app = Flask(__name__)
 CORS(app)  # Permite llamadas desde Lovable y cualquier dominio
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB
+# 64 MB: cubre PDF de manuscrito grande + portada en alta resolución
+app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 
 API_KEY = os.environ.get('NUMANCIA_API_KEY', '')
 
@@ -101,7 +103,7 @@ def health():
     return jsonify({
         'status': 'ok',
         'service': 'Editorial Numancia — Document API',
-        'version': '1.1.0',
+        'version': '1.2.0',
         'endpoints': rutas,
         'timestamp': datetime.utcnow().isoformat()
     })
@@ -207,7 +209,7 @@ def preview():
 def maqueta():
     """
     Genera la maqueta completa A5 lista para imprenta.
-    
+
     Acepta multipart/form-data:
       - docx           (file, opcional pero recomendado)
       - pdf            (file, alternativa a docx)
@@ -220,9 +222,9 @@ def maqueta():
       - papel          (string, default "Papel offset 90 g/m²")
       - cubierta_tipo  (string, default "Cartulina 300 g/m²")
       - laminado       (string, default "Laminado brillante")
-    
+
     También acepta JSON con los mismos campos + texto y docx_base64.
-    
+
     Devuelve: PDF binario con Content-Type application/pdf
     """
     _check_auth()
@@ -441,7 +443,7 @@ def generar_preview_pdf():
     """
     Recibe el JSON con titulo + autor + (bloques | docx_base64 | texto)
     y devuelve solo el PDF del preview con marca de agua.
-    
+
     Si llega 'bloques' (lista editada por la asesora), se usa esa lista
     directamente. Si no, fallback a docx_base64 o texto plano.
     """
@@ -568,7 +570,7 @@ def procesar_manuscrito():
     Procesa un manuscrito .docx y genera:
       - Informe de lectura y valoración (PDF + datos JSON)
       - Maquetación previa borrador (PDF)
-    
+
     Multipart form-data:
       - docx     (file, requerido)
       - asesora  (string: 'laura'|'debora'|'juan')
@@ -898,6 +900,167 @@ def jobs_limpiar():
     horas = int(request.args.get('horas', 24))
     n = limpiar_jobs_antiguos(horas=horas)
     return jsonify({'ok': True, 'jobs_borrados': n, 'horas': horas})
+
+
+# ── POST /pack-promocion ──────────────────────────────────────────────────────
+@app.route('/pack-promocion', methods=['POST'])
+def pack_promocion():
+    """
+    Genera el Pack Promoción y Marketing — Tier 1 "Lanzamiento Esencial".
+
+    Una sola llamada a Claude API que devuelve todos los activos textuales del
+    pack: sinopsis corta/larga, bio del autor, cita nuclear + 5 citas
+    destacadas, 25 medios objetivo, calendario editorial de 4 semanas (28
+    publicaciones), descripciones de Amazon, email de lanzamiento y post de
+    LinkedIn.
+
+    Multipart form-data:
+      - manuscrito      (file PDF, requerido — el manuscrito final del libro)
+      - portada         (file PNG/JPG, opcional — solo se reenvía como meta para
+                          que Lovable la persista; no se procesa en backend)
+      - titulo          (string, requerido)
+      - autor           (string, requerido)
+      - genero          (string, default 'Novela')
+      - url_libreria    (string, requerido — debe empezar por https://)
+      - asesora         (string: 'laura'|'debora'|'juan'|'nancy', default 'laura')
+      - presupuesto_id  (string uuid, opcional — para vincular el pack al
+                          presupuesto del autor en Supabase)
+
+    Tiempo: 30-90 s (1 llamada a claude-sonnet-4-5 con ~30k tokens entrada).
+    Coste estimado: ~2-3 € por pack (calculado en _meta del response).
+
+    Devuelve JSON con todos los campos del pack + bloque _meta:
+      {
+        "metadatos_detectados": { ... },
+        "sinopsis_corta": "...",
+        "sinopsis_larga": "...",
+        "bio_autor_sugerida": "...",
+        "bio_autor_advertencia": null | "...",
+        "cita_nuclear": { "texto": "...", "tipo": "...", "ubicacion": "..." },
+        "citas_destacadas": [ ... ],
+        "medios_objetivo": [ ... 25 items ],
+        "calendario_editorial_4_semanas": [ ... 28 items ],
+        "descripcion_amazon_corta": "...",
+        "descripcion_amazon_larga": "...",
+        "email_lanzamiento_autor": { "asunto": "...", "cuerpo": "..." },
+        "post_linkedin_autor": "...",
+        "_meta": {
+          "tokens_input": int,
+          "tokens_output": int,
+          "coste_eur": float,
+          "asesora": str,
+          "presupuesto_id": str | null,
+          "chars_libro": int,
+          "chars_truncado": bool
+        }
+      }
+    """
+    _check_auth()
+    try:
+        # ── Localizar el archivo del manuscrito (aceptar varios nombres) ──
+        archivo = None
+        for nombre_campo in ('manuscrito', 'pdf', 'docx', 'file', 'archivo'):
+            if nombre_campo in request.files:
+                archivo = request.files[nombre_campo]
+                break
+        if archivo is None and request.files:
+            # Si no es ninguno de los esperados, coger el primer archivo subido
+            # SALVO que sea la portada (que viene en su propio campo)
+            for k, v in request.files.items():
+                if k != 'portada':
+                    archivo = v
+                    break
+        if archivo is None:
+            return jsonify({
+                'error': 'No se ha enviado el manuscrito. '
+                         'Use el campo "manuscrito" con un PDF.'
+            }), 400
+
+        contenido_bytes = archivo.read()
+        nombre_fichero  = archivo.filename or 'manuscrito'
+        nombre_lower    = nombre_fichero.lower()
+
+        # ── Campos del form ───────────────────────────────────────────────
+        titulo         = (request.form.get('titulo') or '').strip()
+        autor          = (request.form.get('autor') or '').strip()
+        genero         = (request.form.get('genero') or 'Novela').strip()
+        url_libreria   = (request.form.get('url_libreria') or '').strip()
+        asesora        = (request.form.get('asesora') or 'laura').strip().lower()
+        presupuesto_id = (request.form.get('presupuesto_id') or '').strip()
+
+        # ── Validaciones de entrada ───────────────────────────────────────
+        faltan = []
+        if not titulo:       faltan.append('titulo')
+        if not autor:        faltan.append('autor')
+        if not url_libreria: faltan.append('url_libreria')
+        if faltan:
+            return jsonify({'error': f'Campos requeridos: {faltan}'}), 400
+        if not url_libreria.startswith('https://'):
+            return jsonify({
+                'error': 'url_libreria debe empezar por https://'
+            }), 400
+
+        # ── Extraer texto del PDF ─────────────────────────────────────────
+        es_pdf = nombre_lower.endswith('.pdf') or contenido_bytes[:4] == b'%PDF'
+        if not es_pdf:
+            return jsonify({
+                'error': f'Formato no soportado: {nombre_fichero}',
+                'sugerencia': 'Sube el manuscrito en PDF.',
+            }), 415
+
+        from pdf_a_texto import parsear_pdf
+        ms_pdf, info_pdf = parsear_pdf(contenido_bytes)
+        if not info_pdf.get('tiene_texto'):
+            return jsonify({
+                'error': 'PDF sin texto extraíble (probablemente escaneado).',
+                'aviso': info_pdf.get('aviso', ''),
+                'sugerencia': 'Pide al autor el manuscrito original o un PDF '
+                              'con texto seleccionable.',
+            }), 422
+
+        texto_libro = '\n\n'.join(b.texto for b in ms_pdf.bloques)
+        chars_libro = len(texto_libro)
+
+        print(
+            f'[pack-promocion] inicio · titulo={titulo!r} autor={autor!r} '
+            f'genero={genero!r} asesora={asesora!r} '
+            f'chars_libro={chars_libro} '
+            f'presupuesto_id={presupuesto_id!r}',
+            flush=True,
+        )
+
+        # ── Llamar al generador (Claude API) ──────────────────────────────
+        pack = generar_pack_promocion(
+            texto_libro=texto_libro,
+            titulo=titulo,
+            autor=autor,
+            genero=genero,
+            url_libreria=url_libreria,
+        )
+
+        # ── Enriquecer _meta con contexto del endpoint ────────────────────
+        if '_meta' not in pack or not isinstance(pack.get('_meta'), dict):
+            pack['_meta'] = {}
+        pack['_meta'].update({
+            'asesora':         asesora,
+            'presupuesto_id':  presupuesto_id or None,
+            'chars_libro':     chars_libro,
+            'chars_truncado':  chars_libro > 80_000,
+        })
+
+        print(
+            f'[pack-promocion] OK · '
+            f'tokens_in={pack["_meta"].get("tokens_input")} '
+            f'tokens_out={pack["_meta"].get("tokens_output")} '
+            f'coste_eur={pack["_meta"].get("coste_eur")}',
+            flush=True,
+        )
+
+        return jsonify(pack)
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': f'{type(e).__name__}: {str(e)}'}), 500
 
 
 # ── Arranque ──────────────────────────────────────────────────────────────────

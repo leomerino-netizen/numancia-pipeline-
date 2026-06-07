@@ -21,7 +21,19 @@ from corrector_aplicado import (
 from pack_promocion_prompt import generar_pack_promocion
 
 app = Flask(__name__)
-CORS(app)  # Permite llamadas desde Lovable y cualquier dominio
+CORS(
+        app,
+        resources={r"/*": {"origins": [
+                    r"https://([a-z0-9-]+\.)*lovableproject\.com$",
+                    r"https://([a-z0-9-]+\.)*lovable\.app$",
+                    "https://valoracion.editorialnumancia.com",
+                    "https://numancia-scribe.lovable.app",
+        ]}},
+        supports_credentials=True,
+        methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["*"],
+        max_age=86400,
+)
 # 64 MB: cubre PDF de manuscrito grande + portada en alta resolución
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 

@@ -582,4 +582,6 @@ def procesar_manuscrito():
 
         asesora    = request.form.get('asesora', 'laura')
         titulo_ovr = request.form.get('titulo', '')
-        autor_ovr  =
+      autor_ovr = None
+# o
+autor_ovr = request.form.get("autor_ovr", "")

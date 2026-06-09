@@ -1,5 +1,5 @@
 """
-Editorial Numancia — API de generación de documentos
+Editorial Numancia â API de generaciÃ³n de documentos
 Endpoints: /presupuesto  /informe  /preview  /maqueta  /pack-promocion
 """
 import os, io, json, base64, traceback
@@ -19,11 +19,6 @@ from corrector_aplicado import (
     limpiar_jobs_antiguos,
 )
 from pack_promocion_prompt import generar_pack_promocion
-from pack_promocion_jobs import (
-    crear_job_pack,
-    get_pack_status,
-    limpiar_pack_jobs_antiguos,
-)
 
 app = Flask(__name__)
 CORS(
@@ -39,22 +34,21 @@ CORS(
         allow_headers=["*"],
         max_age=86400,
 )
-
-# 64 MB: cubre PDF de manuscrito grande + portada en alta resolución
+# 64 MB: cubre PDF de manuscrito grande + portada en alta resoluciÃ³n
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 
 API_KEY = os.environ.get('NUMANCIA_API_KEY', '')
 
 
-def checkauth():
+def _check_auth():
     if not API_KEY:
-        return  # sin clave configurada → abierto (dev)
+        return  # sin clave configurada â abierto (dev)
     key = request.headers.get('X-API-Key', '')
     if key != API_KEY:
-        abort(401, 'API key inválida')
+        abort(401, 'API key invÃ¡lida')
 
 
-def pdfresponse(pdf_bytes: bytes, filename: str):
+def _pdf_response(pdf_bytes: bytes, filename: str):
     return send_file(
         io.BytesIO(pdf_bytes),
         mimetype='application/pdf',
@@ -63,19 +57,20 @@ def pdfresponse(pdf_bytes: bytes, filename: str):
     )
 
 
-# ── Fallback de estrellas (compartido entre /procesar-manuscrito y /generar-informe-pdf)
-def aplicarfallback_estrellas(eval_list, veredicto):
+# ââ Fallback de estrellas (compartido entre /procesar-manuscrito y /generar-informe-pdf)
+def _aplicar_fallback_estrellas(eval_list, veredicto):
     """
-    Si Claude (o Lovable) devolvió 'N/5', '0/5', placeholder o cadena vacía,
-    aplica valores realistas según el veredicto. Devuelve la lista corregida.
+    Si Claude (o Lovable) devolviÃ³ 'N/5', '0/5', placeholder o cadena vacÃ­a,
+    aplica valores realistas segÃºn el veredicto. Devuelve la lista corregida.
     """
-    import re as reest
+    import re as _re_est
+
     veredicto_real = (veredicto or 'CON MEJORAS').upper()
     if 'PUBLICABLE' in veredicto_real and 'CON' not in veredicto_real:
         puntos_default = ['4/5', '4/5', '4/5', '4/5', '4/5']
     elif 'CON MEJORAS' in veredicto_real or 'MEJORAS' in veredicto_real:
         puntos_default = ['3/5', '3/5', '3/5', '4/5', '3/5']
-    else:  # REQUIERE REVISIÓN u otros
+    else:  # REQUIERE REVISIÃN u otros
         puntos_default = ['2/5', '2/5', '2/5', '3/5', '2/5']
 
     eval_corregido = []
@@ -84,7 +79,7 @@ def aplicarfallback_estrellas(eval_list, veredicto):
         if not isinstance(item, dict):
             continue
         estrellas_raw = str(item.get('estrellas', '')).strip()
-        m = reest.search(r'[1-5]', estrellas_raw)
+        m = _re_est.search(r'[1-5]', estrellas_raw)
         es_invalida = (
             not m
             or estrellas_raw in ('0/5', 'N/5', 'X/5', 'ENTRE_1_Y_5_ENTERO/5', '')
@@ -94,9 +89,9 @@ def aplicarfallback_estrellas(eval_list, veredicto):
             estrellas_final = puntos_default[i] if i < len(puntos_default) else '3/5'
             fallback_activado = True
             print(f'[fallback] item {i} ({item.get("criterio","?")!r}): '
-                  f'{estrellas_raw!r} → {estrellas_final!r}', flush=True)
+                  f'{estrellas_raw!r} â {estrellas_final!r}', flush=True)
         else:
-            # Normalizar: si Claude devolvió "4" sin "/5", añadir
+            # Normalizar: si Claude devolviÃ³ "4" sin "/5", aÃ±adir
             if '/' not in estrellas_raw:
                 estrellas_final = f'{m.group()}/5'
             else:
@@ -106,28 +101,27 @@ def aplicarfallback_estrellas(eval_list, veredicto):
             'estrellas': estrellas_final,
             'obs': item.get('obs', ''),
         })
-
     if fallback_activado:
-        print(f'[fallback] ⚠️ Activado para veredicto={veredicto_real!r}', flush=True)
+        print(f'[fallback] â ï¸ Activado para veredicto={veredicto_real!r}', flush=True)
     return eval_corregido
 
 
-# ── Health check ──────────────────────────────────────────────────────────────
+# ââ Health check ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 @app.route('/', methods=['GET'])
 def health():
-    # Lista dinámica de todos los endpoints POST registrados en Flask
+    # Lista dinÃ¡mica de todos los endpoints POST registrados en Flask
     rutas = sorted({str(r) for r in app.url_map.iter_rules()
                     if 'POST' in r.methods and 'static' not in str(r)})
     return jsonify({
         'status': 'ok',
-        'service': 'Editorial Numancia — Document API',
+        'service': 'Editorial Numancia â Document API',
         'version': '1.2.0',
         'endpoints': rutas,
         'timestamp': datetime.utcnow().isoformat()
     })
 
 
-# ── POST /presupuesto ─────────────────────────────────────────────────────────
+# ââ POST /presupuesto âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 @app.route('/presupuesto', methods=['POST'])
 def presupuesto():
     """
@@ -135,7 +129,7 @@ def presupuesto():
     {
       "num_presupuesto": "10212",
       "fecha": "25 de abril de 2026",
-      "asesora": "laura",
+      "asesora": "laura",           // laura | debora | juan | nancy
       "cliente": "Sara Libro Test",
       "obra": "Sara",
       "genero": "Novela",
@@ -150,44 +144,47 @@ def presupuesto():
     }
     Devuelve: PDF binario
     """
-    checkauth()
+    _check_auth()
     try:
         d = request.get_json(force=True)
         if not d:
-            return jsonify({'error': 'JSON vacío'}), 400
+            return jsonify({'error': 'JSON vacÃ­o'}), 400
+
         required = ['num_presupuesto', 'fecha', 'asesora', 'cliente', 'obra',
                     'genero', 'paginas', 'formato', 'precio_unitario',
                     'precio_descuento', 'cantidad', 'precio_maquetacion', 'precio_legal']
         missing = [k for k in required if k not in d]
         if missing:
             return jsonify({'error': f'Campos requeridos: {missing}'}), 400
+
         pdf = generar_presupuesto(d)
         filename = f"presupuesto_{d['num_presupuesto']}_{d['cliente'].split()[0]}.pdf"
-        return pdfresponse(pdf, filename)
+        return _pdf_response(pdf, filename)
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
-# ── POST /informe ─────────────────────────────────────────────────────────────
+# ââ POST /informe âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 @app.route('/informe', methods=['POST'])
 def informe():
     """
     Body JSON: mismo dict que acepta informe_gen.generar_informe()
     Devuelve: PDF binario
     """
-    checkauth()
+    _check_auth()
     try:
         d = request.get_json(force=True)
         pdf = generar_informe(d)
         titulo_safe = d.get('titulo', 'informe').replace(' ', '_')[:30]
-        return pdfresponse(pdf, f"informe_{titulo_safe}.pdf")
+        return _pdf_response(pdf, f"informe_{titulo_safe}.pdf")
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
-# ── POST /preview ─────────────────────────────────────────────────────────────
+# ââ POST /preview âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 @app.route('/preview', methods=['POST'])
 def preview():
     """
@@ -198,7 +195,7 @@ def preview():
       "autor": "..."
     }
     """
-    checkauth()
+    _check_auth()
     try:
         if request.content_type and 'multipart' in request.content_type:
             f = request.files.get('docx')
@@ -213,17 +210,18 @@ def preview():
                 docx_b = base64.b64decode(d['docx_base64'])
             pdf = generar_preview(d.get('texto',''), d['titulo'], d['autor'], docx_bytes=docx_b)
         titulo_safe = d.get('titulo', 'preview').replace(' ', '_')[:30]
-        return pdfresponse(pdf, f"preview_{titulo_safe}.pdf")
+        return _pdf_response(pdf, f"preview_{titulo_safe}.pdf")
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
-# ── POST /maqueta ─────────────────────────────────────────────────────────────
+# ââ POST /maqueta âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 @app.route('/maqueta', methods=['POST'])
 def maqueta():
     """
     Genera la maqueta completa A5 lista para imprenta.
+
     Acepta multipart/form-data:
       - docx           (file, opcional pero recomendado)
       - pdf            (file, alternativa a docx)
@@ -233,15 +231,17 @@ def maqueta():
       - dedicatoria    (string)
       - epigrafe       (string)
       - epigrafe_autor (string)
-      - papel          (string, default "Papel offset 90 g/m²")
-      - cubierta_tipo  (string, default "Cartulina 300 g/m²")
+      - papel          (string, default "Papel offset 90 g/mÂ²")
+      - cubierta_tipo  (string, default "Cartulina 300 g/mÂ²")
       - laminado       (string, default "Laminado brillante")
-    También acepta JSON con los mismos campos + texto y docx_base64.
+
+    TambiÃ©n acepta JSON con los mismos campos + texto y docx_base64.
+
     Devuelve: PDF binario con Content-Type application/pdf
     """
-    checkauth()
+    _check_auth()
     try:
-        # ── Modo multipart ────────────────────────────────────────────────
+        # ââ Modo multipart ââââââââââââââââââââââââââââââââââââââââââââââââ
         if request.content_type and 'multipart' in request.content_type:
             archivo = None
             for nc in ('docx', 'pdf', 'manuscrito', 'file', 'archivo'):
@@ -258,12 +258,12 @@ def maqueta():
                 es_pdf    = nombre.endswith('.pdf') or contenido[:4] == b'%PDF'
                 if es_pdf:
                     from pdf_a_texto import parsear_pdf
-                    ms_pdf, info = parsear_pdf(contenido)
+                    ms_pdf, _info = parsear_pdf(contenido)
                     texto_pdf = '\n\n'.join(b.texto for b in ms_pdf.bloques)
                 else:
                     docx_bytes = contenido
 
-            titulo = request.form.get('titulo', '').strip() or 'Sin título'
+            titulo = request.form.get('titulo', '').strip() or 'Sin tÃ­tulo'
             autor  = request.form.get('autor', '').strip()
             anyo   = request.form.get('anyo', '2026')
 
@@ -276,88 +276,93 @@ def maqueta():
                 epigrafe       = request.form.get('epigrafe', ''),
                 epigrafe_autor = request.form.get('epigrafe_autor', ''),
                 docx_bytes     = docx_bytes,
-                papel          = request.form.get('papel',         'Papel offset 90 g/m²'),
-                cubierta_tipo  = request.form.get('cubierta_tipo', 'Cartulina 300 g/m²'),
+                papel          = request.form.get('papel',         'Papel offset 90 g/mÂ²'),
+                cubierta_tipo  = request.form.get('cubierta_tipo', 'Cartulina 300 g/mÂ²'),
                 laminado       = request.form.get('laminado',      'Laminado brillante'),
                 isbn           = request.form.get('isbn', ''),
                 deposito_legal = request.form.get('deposito_legal', ''),
             )
             titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:60].strip()
-            return pdfresponse(pdf, f"Maqueta completa - {titulo_safe}.pdf")
+            return _pdf_response(pdf, f"Maqueta completa - {titulo_safe}.pdf")
 
-        # ── Modo JSON ─────────────────────────────────────────────────────
+        # ââ Modo JSON âââââââââââââââââââââââââââââââââââââââââââââââââââââ
         d = request.get_json(force=True)
         docx_b = None
         if d.get('docx_base64'):
             import base64 as _b64
             docx_b = _b64.b64decode(d['docx_base64'])
-
         pdf = generar_maqueta_completa(
             texto          = d.get('texto', ''),
-            titulo         = d.get('titulo', 'Sin título'),
+            titulo         = d.get('titulo', 'Sin tÃ­tulo'),
             autor          = d.get('autor', ''),
             anyo           = d.get('anyo', '2026'),
             dedicatoria    = d.get('dedicatoria', ''),
             epigrafe       = d.get('epigrafe', ''),
             epigrafe_autor = d.get('epigrafe_autor', ''),
             docx_bytes     = docx_b,
-            papel          = d.get('papel',         'Papel offset 90 g/m²'),
-            cubierta_tipo  = d.get('cubierta_tipo', 'Cartulina 300 g/m²'),
+            papel          = d.get('papel',         'Papel offset 90 g/mÂ²'),
+            cubierta_tipo  = d.get('cubierta_tipo', 'Cartulina 300 g/mÂ²'),
             laminado       = d.get('laminado',      'Laminado brillante'),
             isbn           = d.get('isbn', ''),
             deposito_legal = d.get('deposito_legal', ''),
         )
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in d.get('titulo','maqueta'))[:60].strip()
-        return pdfresponse(pdf, f"Maqueta completa - {titulo_safe}.pdf")
+        return _pdf_response(pdf, f"Maqueta completa - {titulo_safe}.pdf")
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
-# ── POST /extraer-presupuesto ─────────────────────────────────────────────────
+# ââ POST /extraer-presupuesto âââââââââââââââââââââââââââââââââââââââââââââââââ
 @app.route('/extraer-presupuesto', methods=['POST'])
 def extraer():
     """
     Recibe un PDF (multipart field 'pdf') generado por Printcolor/Numancia.
-    Devuelve JSON con todos los campos extraídos listos para el formulario.
+    Devuelve JSON con todos los campos extraÃ­dos listos para el formulario.
     """
-    checkauth()
+    _check_auth()
     try:
         if 'pdf' not in request.files:
             return jsonify({'error': 'Campo "pdf" requerido'}), 400
         archivo = request.files['pdf']
         pdf_bytes = archivo.read()
         if not pdf_bytes:
-            return jsonify({'error': 'Archivo vacío'}), 400
+            return jsonify({'error': 'Archivo vacÃ­o'}), 400
+
         datos = extraer_presupuesto(pdf_bytes)
         return jsonify({'ok': True, 'datos': datos})
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
-# ── POST /transformar-presupuesto ─────────────────────────────────────────────
+# ââ POST /transformar-presupuesto âââââââââââââââââââââââââââââââââââââââââââââ
 @app.route('/transformar-presupuesto', methods=['POST'])
 def transformar():
     """
     Todo en uno: sube el PDF de Printcolor + overrides opcionales en form-data,
     extrae los datos, aplica los overrides y devuelve el PDF personalizado.
+
     Form fields:
       - pdf (file, requerido)
-      - asesora (string, opcional — sobreescribe la detectada)
-      - overrides (JSON string, opcional — cualquier campo a sobreescribir)
+      - asesora (string, opcional â sobreescribe la detectada)
+      - overrides (JSON string, opcional â cualquier campo a sobreescribir)
     """
-    checkauth()
+    _check_auth()
     try:
         if 'pdf' not in request.files:
             return jsonify({'error': 'Campo "pdf" requerido'}), 400
+
         pdf_bytes = request.files['pdf'].read()
         datos = extraer_presupuesto(pdf_bytes)
 
+        # Asesora override (campo directo por comodidad)
         if request.form.get('asesora'):
             datos['asesora'] = request.form['asesora']
 
+        # Override genÃ©rico en JSON
         if request.form.get('overrides'):
             import json
             overrides = json.loads(request.form['overrides'])
@@ -366,23 +371,32 @@ def transformar():
         pdf_out = generar_presupuesto(datos)
         cliente_safe = datos.get('cliente', 'cliente').split()[0]
         num = datos.get('num_presupuesto', '0')
-        return pdfresponse(pdf_out, f"propuesta_{num}_{cliente_safe}.pdf")
+        return _pdf_response(pdf_out, f"propuesta_{num}_{cliente_safe}.pdf")
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
-# ── POST /generar-informe-pdf ─────────────────────────────────────────────────
+# ââ POST /generar-informe-pdf âââââââââââââââââââââââââââââââââââââââââââââââââ
 @app.route('/generar-informe-pdf', methods=['POST'])
 def generar_informe_pdf():
     """
     Recibe el JSON de datos del informe (potencialmente editado por el asesor)
-    y devuelve solo el PDF del informe de lectura y valoración.
+    y devuelve solo el PDF del informe de lectura y valoraciÃ³n.
+
+    Body JSON con todos los campos del informe:
+      titulo, autor, genero, ambientacion, extension,
+      fecha, evaluado_por, sinopsis_i, sinopsis_ii, sinopsis_iii,
+      eval (lista), veredicto, veredicto_texto,
+      lector_primario, lector_secundario, comparable, precio,
+      notas (lista), carta_autor, ortotipo (objeto opcional)
     """
-    checkauth()
+    _check_auth()
     try:
         d = request.get_json(force=True) or {}
 
+        # ââ DEBUG: log de lo que llega de Lovable ââââââââââââââââââââââ
         print(f'[generar_informe_pdf] payload keys: {list(d.keys())}', flush=True)
         eval_recibido = d.get('eval') or d.get('evaluacion') or []
         print(f'[generar_informe_pdf] eval recibido ({len(eval_recibido)} items): '
@@ -390,6 +404,7 @@ def generar_informe_pdf():
               flush=True)
         print(f'[generar_informe_pdf] veredicto: {d.get("veredicto")!r}', flush=True)
 
+        # Si viene anidado como en /procesar-manuscrito, normalizar
         if 'sinopsis' in d and isinstance(d['sinopsis'], dict):
             d['sinopsis_i']  = d['sinopsis'].get('i','')
             d['sinopsis_ii'] = d['sinopsis'].get('ii','')
@@ -404,11 +419,13 @@ def generar_informe_pdf():
         if 'asesora_nombre' in d and not d.get('evaluado_por'):
             d['evaluado_por'] = d['asesora_nombre']
 
-        d['eval'] = aplicarfallback_estrellas(
+        # ââ FALLBACK: corrige estrellas placeholder antes de renderizar ââ
+        d['eval'] = _aplicar_fallback_estrellas(
             d.get('eval', []),
             d.get('veredicto', 'CON MEJORAS')
         )
 
+        # Reconstruir ortotipo si viene en formato simplificado
         orto = d.get('ortotipo')
         if orto and 'incidencias' in orto and 'total' in orto and 'total_incidencias' not in orto:
             d['ortotipo'] = {
@@ -418,37 +435,41 @@ def generar_informe_pdf():
                 'incidencias':          orto.get('incidencias', []),
             }
 
+        # Normalizar numero_presupuesto: trim y vacÃ­o si no llega.
+        # Si estÃ¡ vacÃ­o, informe_gen NO lo imprimirÃ¡ en el PDF.
         d['numero_presupuesto'] = (d.get('numero_presupuesto') or '').strip()
         if d['numero_presupuesto']:
             print(f'[generar_informe_pdf] numero_presupuesto={d["numero_presupuesto"]!r}', flush=True)
 
         pdf = generar_informe(d)
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in d.get('titulo','informe'))[:50].strip()
-        return pdfresponse(pdf, f'Informe de lectura y valoracion - {titulo_safe}.pdf')
+        return _pdf_response(pdf, f'Informe de lectura y valoracion - {titulo_safe}.pdf')
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
-# ── POST /generar-preview-pdf ─────────────────────────────────────────────────
+# ââ POST /generar-preview-pdf âââââââââââââââââââââââââââââââââââââââââââââââââ
 @app.route('/generar-preview-pdf', methods=['POST'])
 def generar_preview_pdf():
     """
     Recibe el JSON con titulo + autor + (bloques | docx_base64 | texto)
     y devuelve solo el PDF del preview con marca de agua.
+
+    Si llega 'bloques' (lista editada por la asesora), se usa esa lista
+    directamente. Si no, fallback a docx_base64 o texto plano.
     """
-    checkauth()
+    _check_auth()
     try:
         d = request.get_json(force=True) or {}
-
         titulo         = (d.get('titulo') or 'Sin titulo').strip()
         autor          = (d.get('autor') or '').strip()
         dedicatoria    = (d.get('dedicatoria') or '').strip()
         epigrafe       = (d.get('epigrafe') or '').strip()
         epigrafe_autor = (d.get('epigrafe_autor') or '').strip()
         asesora        = (d.get('asesora') or 'laura').strip().lower()
-        tipo_papel     = (d.get('tipo_papel') or 'Papel novela ahuesado de 80 g/m²').strip()
-        acabado        = (d.get('acabado') or 'Tapa blanda con solapas, encuadernación fresada').strip()
+        tipo_papel     = (d.get('tipo_papel') or 'Papel novela ahuesado de 80 g/mÂ²').strip()
+        acabado        = (d.get('acabado') or 'Tapa blanda con solapas, encuadernaciÃ³n fresada').strip()
 
         bloques_raw = d.get('bloques')
         tiene_bloques = isinstance(bloques_raw, list) and len(bloques_raw) > 0
@@ -460,6 +481,7 @@ def generar_preview_pdf():
               f'docx={tiene_docx} texto={tiene_texto} '
               f'dedi={bool(dedicatoria)} epi={bool(epigrafe)}')
 
+        # Prioridad 1: bloques editados por la asesora
         if tiene_bloques:
             from docx_parser import Bloque
             bloques_lista = []
@@ -472,7 +494,7 @@ def generar_preview_pdf():
                 html  = b.get('html') or texto
                 primer_parr = bool(b.get('primer_parr', False))
                 bloques_lista.append(Bloque(tipo, texto, html, primer_parr=primer_parr))
-
+            # Marcar primer pÃ¡rrafo tras cada cap_titulo automÃ¡ticamente
             siguiente_es_primero = False
             for bl in bloques_lista:
                 if bl.tipo == 'cap_titulo':
@@ -481,10 +503,10 @@ def generar_preview_pdf():
                     bl.primer_parr = True
                     siguiente_es_primero = False
 
-            print(f'[preview] generando con {len(bloques_lista)} bloques útiles')
+            print(f'[preview] generando con {len(bloques_lista)} bloques Ãºtiles')
             if not bloques_lista:
+                # Si tras filtrar no queda nada, generar al menos la portada
                 bloques_lista = [Bloque('parrafo', '(sin contenido)', '(sin contenido)')]
-
             pdf = generar_preview('', titulo, autor, bloques=bloques_lista,
                                   dedicatoria=dedicatoria,
                                   epigrafe=epigrafe, epigrafe_autor=epigrafe_autor,
@@ -507,12 +529,14 @@ def generar_preview_pdf():
                                   tipo_papel=tipo_papel, acabado=acabado)
 
         if not pdf:
-            print(f'[preview] ERROR: generar_preview devolvió bytes vacíos')
-            return jsonify({'error': 'No se pudo generar el PDF (bytes vacíos)'}), 500
+            print(f'[preview] ERROR: generar_preview devolviÃ³ bytes vacÃ­os')
+            return jsonify({'error': 'No se pudo generar el PDF (bytes vacÃ­os)'}), 500
 
         print(f'[preview] PDF generado: {len(pdf)//1024} KB')
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip() or 'preview'
 
+        # Si el cliente enviÃ³ "format=base64" o Accept: application/json,
+        # devolver JSON con el PDF codificado en base64. Lovable lo necesita asÃ­.
         formato = (d.get('format') or '').lower()
         accept  = (request.headers.get('Accept') or '').lower()
         quiere_json = formato == 'base64' or 'application/json' in accept
@@ -526,19 +550,18 @@ def generar_preview_pdf():
                 'size_kb': len(pdf) // 1024,
             })
 
-        return pdfresponse(pdf, f'Maquetacion previa borrador - {titulo_safe}.pdf')
-
+        return _pdf_response(pdf, f'Maquetacion previa borrador - {titulo_safe}.pdf')
     except Exception as e:
-        print(f'[preview] EXCEPCIÓN: {type(e).__name__}: {e}')
+        print(f'[preview] EXCEPCIÃN: {type(e).__name__}: {e}')
         traceback.print_exc()
         return jsonify({'error': f'{type(e).__name__}: {str(e)}'}), 500
 
 
-def bloquespara_preview(bloques, max_bloques=140):
+def _bloques_para_preview(bloques, max_bloques=140):
     """
     Convierte la lista de Bloque del parser en un array JSON simple
-    para que la asesora edite los párrafos antes de generar el preview.
-    Limita a max_bloques (~20 páginas A5).
+    para que la asesora edite los pÃ¡rrafos antes de generar el preview.
+    Limita a max_bloques (~20 pÃ¡ginas A5).
     """
     salida = []
     for b in bloques[:max_bloques]:
@@ -552,34 +575,507 @@ def bloquespara_preview(bloques, max_bloques=140):
     return salida
 
 
-# ── POST /procesar-manuscrito ─────────────────────────────────────────────────
+# ââ POST /procesar-manuscrito âââââââââââââââââââââââââââââââââââââââââââââââââ
 @app.route('/procesar-manuscrito', methods=['POST'])
 def procesar_manuscrito():
     """
     Procesa un manuscrito .docx y genera:
-      - Informe de lectura y valoración (PDF + datos JSON)
-      - Maquetación previa borrador (PDF)
+      - Informe de lectura y valoraciÃ³n (PDF + datos JSON)
+      - MaquetaciÃ³n previa borrador (PDF)
+
     Multipart form-data:
       - docx     (file, requerido)
       - asesora  (string: 'laura'|'debora'|'juan')
       - titulo   (opcional)
       - autor    (opcional)
     """
-    checkauth()
+    _check_auth()
     try:
+        # Aceptar varios nombres de campo: docx, pdf, manuscrito, file
         archivo = None
         for nombre_campo in ('docx', 'pdf', 'manuscrito', 'file', 'archivo'):
             if nombre_campo in request.files:
                 archivo = request.files[nombre_campo]
                 break
         if archivo is None and request.files:
+            # Tomar el primer archivo subido
             archivo = next(iter(request.files.values()))
         if archivo is None:
-            return jsonify({'error': 'No se ha enviado ningún archivo. Use el campo "docx", "pdf" o "manuscrito".'}), 400
+            return jsonify({'error': 'No se ha enviado ningÃºn archivo. Use el campo "docx", "pdf" o "manuscrito".'}), 400
 
         contenido_bytes = archivo.read()
         nombre_fichero  = archivo.filename or 'manuscrito'
-
         asesora    = request.form.get('asesora', 'laura')
         titulo_ovr = request.form.get('titulo', '')
         autor_ovr = request.form.get('autor_ovr', '')
+        # NÃºmero de valoraciÃ³n (opcional) â viene del frontend Lovable.
+        # Si estÃ¡ vacÃ­o o no llega, no se imprime nada en el PDF.
+        numero_presupuesto = (request.form.get('numero_presupuesto') or '').strip()
+        # Si incluir_pdfs=false, devolvemos solo los datos JSON (mÃ¡s rÃ¡pido)
+        # para que el asesor edite antes de generar los PDFs.
+        incluir_pdfs = request.form.get('incluir_pdfs', 'true').lower() != 'false'
+
+        # Detectar formato
+        nombre_lower = nombre_fichero.lower()
+        es_pdf  = nombre_lower.endswith('.pdf')  or contenido_bytes[:4] == b'%PDF'
+        es_docx = nombre_lower.endswith('.docx') or contenido_bytes[:4] == b'PK\x03\x04'
+
+        # TÃ­tulo del nombre de archivo (sin extensiÃ³n, normalizado)
+        import re as _re
+        titulo_archivo = _re.sub(r'\.(docx?|pdf|txt)$', '', nombre_fichero, flags=_re.IGNORECASE)
+        titulo_archivo = _re.sub(r'[_-]+', ' ', titulo_archivo).strip()
+        titulo_archivo = ' '.join(w.capitalize() if len(w) > 3 or i == 0 else w.lower()
+                                   for i, w in enumerate(titulo_archivo.split()))
+
+        # 1. Parsear manuscrito segÃºn formato
+        from analizador import analizar_manuscrito
+        aviso_pdf = ''
+        if es_pdf:
+            from pdf_a_texto import parsear_pdf
+            ms, info_pdf = parsear_pdf(contenido_bytes)
+            aviso_pdf = info_pdf.get('aviso', '')
+            if not info_pdf.get('tiene_texto'):
+                return jsonify({
+                    'error': 'PDF sin texto extraÃ­ble (probablemente escaneado).',
+                    'aviso': aviso_pdf,
+                    'sugerencia': 'Solicita al autor el manuscrito en formato .docx (Word).',
+                }), 422
+            # Para PDFs hay que generar el .docx temporal para preview/maqueta
+            # â alternativa: pasar bytes vacÃ­os y que use el texto
+            docx_bytes_para_maqueta = None
+        elif es_docx:
+            from docx_parser import parsear_docx
+            ms = parsear_docx(contenido_bytes)
+            docx_bytes_para_maqueta = contenido_bytes
+        else:
+            return jsonify({
+                'error': f'Formato no soportado: {nombre_fichero}',
+                'sugerencia': 'Use .docx (Word) o .pdf (PDF con texto)',
+            }), 415
+        # Prioridad: override (Lovable) > parser (docx) > nombre archivo
+        titulo = (titulo_ovr or '').strip() or (ms.titulo or '').strip() or titulo_archivo or 'Sin tÃ­tulo'
+        autor  = (autor_ovr  or '').strip() or (ms.autor  or '').strip() or ''
+        print(f'[procesar] titulo_ovr={titulo_ovr!r} ms.titulo={ms.titulo!r} '
+              f'titulo_archivo={titulo_archivo!r} â titulo_final={titulo!r}')
+        print(f'[procesar] autor_ovr={autor_ovr!r} ms.autor={ms.autor!r} â autor_final={autor!r}')
+
+        # 2. EstadÃ­sticas
+        palabras    = sum(len(b.texto.split()) for b in ms.bloques)
+        num_caps    = sum(1 for b in ms.bloques if b.tipo == 'cap_titulo')
+        # PÃ¡ginas estimadas: A5 fresada con interlineado profesional
+        # Media empÃ­rica = ~110 palabras netas por pÃ¡gina de cuerpo
+        # (incluye pÃ¡ginas con diÃ¡logo, inicios de capÃ­tulo, blancos, etc.)
+        paginas_est = max(1, round(palabras / 110))
+
+        # 3. Mapear asesora a nombre
+        asesoras_n = {
+            'laura':  'Laura Vega Ugarte',
+            'debora': 'DÃ©bora TÃ³mas',
+            'juan':   'Juan MuÃ±oz',
+            'nancy':  'Nancy',
+        }
+
+        # 4. AnÃ¡lisis editorial completo (Claude API o fallback)
+        analisis = analizar_manuscrito(ms, titulo, autor,
+                                       asesora_nombre=asesoras_n.get(asesora, asesora))
+
+        # 4-bis. AnÃ¡lisis ortotipogrÃ¡fico preliminar (RAE / MartÃ­nez de Sousa)
+        from corrector_preliminar import analizar_desde_bloques
+        ortotipo = analizar_desde_bloques(ms.bloques)
+
+        # 4. Fecha en espaÃ±ol
+        from datetime import date
+        hoy = date.today()
+        meses = ['enero','febrero','marzo','abril','mayo','junio',
+                 'julio','agosto','septiembre','octubre','noviembre','diciembre']
+        fecha_str = f"{hoy.day} de {meses[hoy.month-1]} de {hoy.year}"
+
+        # 5. Construir dict completo del informe
+        # DEBUG: ver quÃ© nos devuelve Claude en eval (para diagnosticar estrellas)
+        eval_real = analisis.get('eval', [])
+        print(f'[procesar] analisis.eval ({len(eval_real)} items): {eval_real}', flush=True)
+
+        # FALLBACK: corregir estrellas placeholder con valores realistas segÃºn veredicto
+        eval_corregido = _aplicar_fallback_estrellas(
+            eval_real,
+            analisis.get('veredicto', 'CON MEJORAS')
+        )
+
+        datos_informe = {
+            'titulo':        titulo,
+            'autor':         autor,
+            'genero':        analisis.get('genero', 'Novela'),
+            'extension':     f'{palabras:,} palabras Â· {num_caps} capÃ­tulos Â· aprox. {paginas_est} pÃ¡gs. A5'.replace(',', '.'),
+            'ambientacion':  analisis.get('ambientacion', ''),
+            'fecha':         fecha_str,
+            'evaluado_por':  asesoras_n.get(asesora, asesora),
+            'numero_presupuesto': numero_presupuesto,
+            'sinopsis_i':    analisis.get('sinopsis_i', ''),
+            'sinopsis_ii':   analisis.get('sinopsis_ii', ''),
+            'sinopsis_iii':  analisis.get('sinopsis_iii', ''),
+            'eval':          eval_corregido,
+            'veredicto':       analisis.get('veredicto', 'CON MEJORAS'),
+            'veredicto_texto': analisis.get('veredicto_texto', ''),
+            'lector_primario':   analisis.get('lector_primario', ''),
+            'lector_secundario': analisis.get('lector_secundario', ''),
+            'comparable':        analisis.get('comparable', ''),
+            'precio':            analisis.get('precio', ''),
+            'notas':             analisis.get('notas', []),
+            'carta_autor':       analisis.get('carta_autor', ''),
+            'ortotipo':          ortotipo,
+        }
+
+        informe_bytes = b''
+        preview_bytes = b''
+        if incluir_pdfs:
+            informe_bytes = generar_informe(datos_informe)
+
+            # 6. Generar preview PDF (pasamos la asesora para personalizar la pÃ¡gina final)
+            asesora_slug = (asesora or 'laura').strip().lower()
+            if docx_bytes_para_maqueta:
+                preview_bytes = generar_preview('', titulo, autor, docx_bytes=docx_bytes_para_maqueta,
+                                                asesora=asesora_slug)
+            else:
+                # Para PDF: pasar los bloques ya parseados para conservar estructura
+                preview_bytes = generar_preview('', titulo, autor, bloques=ms.bloques,
+                                                asesora=asesora_slug)
+
+        # 7. Nombres de archivo profesionales
+        titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip()
+        nombre_informe = f'Informe de lectura y valoracion - {titulo_safe}.pdf'
+        nombre_preview = f'Maquetacion previa borrador - {titulo_safe}.pdf'
+
+        # 8. Devolver JSON con todos los datos para Lovable
+        return jsonify({
+            'ok':                True,
+            'titulo':            titulo,
+            'autor':             autor,
+            'genero':            datos_informe['genero'],
+            'ambientacion':      datos_informe['ambientacion'],
+            'palabras':          palabras,
+            'capitulos':         num_caps,
+            'paginas_estimadas': paginas_est,
+            'asesora':           asesora,
+            'asesora_nombre':    asesoras_n.get(asesora, asesora),
+            'fecha':             fecha_str,
+            'numero_presupuesto': numero_presupuesto,
+            'sinopsis': {
+                'i':   datos_informe['sinopsis_i'],
+                'ii':  datos_informe['sinopsis_ii'],
+                'iii': datos_informe['sinopsis_iii'],
+            },
+            'evaluacion':        datos_informe['eval'],
+            'veredicto':         datos_informe['veredicto'],
+            'veredicto_texto':   datos_informe['veredicto_texto'],
+            'publico': {
+                'lector_primario':   datos_informe['lector_primario'],
+                'lector_secundario': datos_informe['lector_secundario'],
+                'comparable':        datos_informe['comparable'],
+                'precio':            datos_informe['precio'],
+            },
+            'notas':             datos_informe['notas'],
+            'carta_autor':       datos_informe['carta_autor'],
+            'ortotipo': {
+                'total':       ortotipo['total_incidencias'],
+                'categorias':  ortotipo['categorias_afectadas'],
+                'resumen':     ortotipo['resumen_corrector'],
+                'incidencias': ortotipo['incidencias'],
+            },
+            'bloques_preview':   _bloques_para_preview(ms.bloques, max_bloques=140),
+            'nombre_informe':    nombre_informe,
+            'nombre_preview':    nombre_preview,
+            'informe_pdf':   base64.b64encode(informe_bytes).decode() if informe_bytes else '',
+            'preview_pdf':   base64.b64encode(preview_bytes).decode() if preview_bytes else '',
+        })
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ââ POST /aplicar-correcciones ââââââââââââââââââââââââââââââââââââââââââââââââ
+@app.route('/aplicar-correcciones', methods=['POST'])
+def aplicar_correcciones():
+    """
+    Inicia un job ASÃNCRONO de correcciÃ³n IA sobre un .docx.
+
+    Body JSON:
+      {
+        "docx_base64":   "...",       # requerido â manuscrito original
+        "expediente_id": "P-2026-...",# opcional â identificador del expediente
+        "asesora":       "laura"      # opcional â slug o nombre completo
+      }
+
+    Devuelve inmediatamente:
+      { "ok": true, "job_id": "...", "estado": "pendiente" }
+
+    El cliente debe consultar /job-status/<job_id> cada ~10s para ver progreso,
+    y descargar el resultado con /job-resultado/<job_id> cuando estado=='completado'.
+    """
+    _check_auth()
+    try:
+        d = request.get_json(force=True) or {}
+
+        # Aceptar tambiÃ©n multipart por comodidad
+        if not d.get('docx_base64') and request.files:
+            f = next(iter(request.files.values()))
+            docx_bytes = f.read()
+            expediente_id = request.form.get('expediente_id', '')
+            asesora = request.form.get('asesora', 'laura')
+        else:
+            if not d.get('docx_base64'):
+                return jsonify({'error': 'Campo "docx_base64" requerido'}), 400
+            try:
+                docx_bytes = base64.b64decode(d['docx_base64'])
+            except Exception as e:
+                return jsonify({'error': f'docx_base64 invÃ¡lido: {e}'}), 400
+            expediente_id = d.get('expediente_id', '')
+            asesora = d.get('asesora', 'laura')
+
+        if len(docx_bytes) < 100:
+            return jsonify({'error': 'docx vacÃ­o o demasiado pequeÃ±o'}), 400
+
+        job_id = crear_job_correccion(
+            docx_bytes=docx_bytes,
+            expediente_id=expediente_id,
+            asesora=asesora,
+        )
+
+        print(f'[aplicar-correcciones] job creado: {job_id} '
+              f'expediente={expediente_id!r} asesora={asesora!r} '
+              f'docx={len(docx_bytes)//1024}KB', flush=True)
+
+        return jsonify({
+            'ok': True,
+            'job_id': job_id,
+            'estado': 'pendiente',
+            'mensaje': 'Procesamiento iniciado. Consulta el estado en /job-status/' + job_id,
+            'expediente_id': expediente_id,
+            'asesora': asesora,
+        }), 202  # 202 Accepted: procesamiento aceptado, aÃºn no completado
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': f'{type(e).__name__}: {str(e)}'}), 500
+
+
+# ââ GET /job-status/<job_id> ââââââââââââââââââââââââââââââââââââââââââââââââââ
+@app.route('/job-status/<job_id>', methods=['GET'])
+def job_status(job_id):
+    """
+    Consulta el estado de un job de correcciÃ³n.
+    Devuelve estado, progreso (0-100), mensaje, resumen (si estÃ¡ completado).
+    NO incluye el .docx para mantener el polling ligero.
+    """
+    _check_auth()
+    estado = get_job_status(job_id)
+    if estado is None:
+        return jsonify({'error': 'job_id no encontrado'}), 404
+    return jsonify({'ok': True, **estado})
+
+
+# ââ GET /job-resultado/<job_id> âââââââââââââââââââââââââââââââââââââââââââââââ
+@app.route('/job-resultado/<job_id>', methods=['GET'])
+def job_resultado(job_id):
+    """
+    Descarga el .docx corregido de un job completado.
+    Devuelve el .docx codificado en base64 + resumen de cambios.
+    """
+    _check_auth()
+    estado = get_job_status(job_id)
+    if estado is None:
+        return jsonify({'error': 'job_id no encontrado'}), 404
+    if estado['estado'] != 'completado':
+        return jsonify({
+            'error': f'Job aÃºn no completado (estado={estado["estado"]})',
+            'estado_actual': estado,
+        }), 409  # Conflict: el recurso no estÃ¡ listo
+
+    resultado = get_job_resultado(job_id)
+    if resultado is None:
+        return jsonify({'error': 'No se pudo recuperar el resultado'}), 500
+
+    return jsonify({
+        'ok': True,
+        **resultado,
+    })
+
+
+# ââ POST /jobs-limpiar ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+@app.route('/jobs-limpiar', methods=['POST'])
+def jobs_limpiar():
+    """
+    Limpia jobs completados/error antiguos (default: >24h).
+    Ãtil llamar periÃ³dicamente vÃ­a cron desde Lovable.
+    """
+    _check_auth()
+    horas = int(request.args.get('horas', 24))
+    n = limpiar_jobs_antiguos(horas=horas)
+    return jsonify({'ok': True, 'jobs_borrados': n, 'horas': horas})
+
+
+# ââ POST /pack-promocion ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+@app.route('/pack-promocion', methods=['POST'])
+def pack_promocion():
+    """
+    Genera el Pack PromociÃ³n y Marketing â Tier 1 "Lanzamiento Esencial".
+
+    Una sola llamada a Claude API que devuelve todos los activos textuales del
+    pack: sinopsis corta/larga, bio del autor, cita nuclear + 5 citas
+    destacadas, 25 medios objetivo, calendario editorial de 4 semanas (28
+    publicaciones), descripciones de Amazon, email de lanzamiento y post de
+    LinkedIn.
+
+    Multipart form-data:
+      - manuscrito      (file PDF, requerido â el manuscrito final del libro)
+      - portada         (file PNG/JPG, opcional â solo se reenvÃ­a como meta para
+                          que Lovable la persista; no se procesa en backend)
+      - titulo          (string, requerido)
+      - autor           (string, requerido)
+      - genero          (string, default 'Novela')
+      - url_libreria    (string, requerido â debe empezar por https://)
+      - asesora         (string: 'laura'|'debora'|'juan'|'nancy', default 'laura')
+      - presupuesto_id  (string uuid, opcional â para vincular el pack al
+                          presupuesto del autor en Supabase)
+
+    Tiempo: 30-90 s (1 llamada a claude-sonnet-4-5 con ~30k tokens entrada).
+    Coste estimado: ~2-3 â¬ por pack (calculado en _meta del response).
+
+    Devuelve JSON con todos los campos del pack + bloque _meta:
+      {
+        "metadatos_detectados": { ... },
+        "sinopsis_corta": "...",
+        "sinopsis_larga": "...",
+        "bio_autor_sugerida": "...",
+        "bio_autor_advertencia": null | "...",
+        "cita_nuclear": { "texto": "...", "tipo": "...", "ubicacion": "..." },
+        "citas_destacadas": [ ... ],
+        "medios_objetivo": [ ... 25 items ],
+        "calendario_editorial_4_semanas": [ ... 28 items ],
+        "descripcion_amazon_corta": "...",
+        "descripcion_amazon_larga": "...",
+        "email_lanzamiento_autor": { "asunto": "...", "cuerpo": "..." },
+        "post_linkedin_autor": "...",
+        "_meta": {
+          "tokens_input": int,
+          "tokens_output": int,
+          "coste_eur": float,
+          "asesora": str,
+          "presupuesto_id": str | null,
+          "chars_libro": int,
+          "chars_truncado": bool
+        }
+      }
+    """
+    _check_auth()
+    try:
+        # ââ Localizar el archivo del manuscrito (aceptar varios nombres) ââ
+        archivo = None
+        for nombre_campo in ('manuscrito', 'pdf', 'docx', 'file', 'archivo'):
+            if nombre_campo in request.files:
+                archivo = request.files[nombre_campo]
+                break
+        if archivo is None and request.files:
+            # Si no es ninguno de los esperados, coger el primer archivo subido
+            # SALVO que sea la portada (que viene en su propio campo)
+            for k, v in request.files.items():
+                if k != 'portada':
+                    archivo = v
+                    break
+        if archivo is None:
+            return jsonify({
+                'error': 'No se ha enviado el manuscrito. '
+                         'Use el campo "manuscrito" con un PDF.'
+            }), 400
+
+        contenido_bytes = archivo.read()
+        nombre_fichero  = archivo.filename or 'manuscrito'
+        nombre_lower    = nombre_fichero.lower()
+
+        # ââ Campos del form âââââââââââââââââââââââââââââââââââââââââââââââ
+        titulo         = (request.form.get('titulo') or '').strip()
+        autor          = (request.form.get('autor') or '').strip()
+        genero         = (request.form.get('genero') or 'Novela').strip()
+        url_libreria   = (request.form.get('url_libreria') or '').strip()
+        asesora        = (request.form.get('asesora') or 'laura').strip().lower()
+        presupuesto_id = (request.form.get('presupuesto_id') or '').strip()
+
+        # ââ Validaciones de entrada âââââââââââââââââââââââââââââââââââââââ
+        faltan = []
+        if not titulo:       faltan.append('titulo')
+        if not autor:        faltan.append('autor')
+        if not url_libreria: faltan.append('url_libreria')
+        if faltan:
+            return jsonify({'error': f'Campos requeridos: {faltan}'}), 400
+        if not url_libreria.startswith('https://'):
+            return jsonify({
+                'error': 'url_libreria debe empezar por https://'
+            }), 400
+
+        # ââ Extraer texto del PDF âââââââââââââââââââââââââââââââââââââââââ
+        es_pdf = nombre_lower.endswith('.pdf') or contenido_bytes[:4] == b'%PDF'
+        if not es_pdf:
+            return jsonify({
+                'error': f'Formato no soportado: {nombre_fichero}',
+                'sugerencia': 'Sube el manuscrito en PDF.',
+            }), 415
+
+        from pdf_a_texto import parsear_pdf
+        ms_pdf, info_pdf = parsear_pdf(contenido_bytes)
+        if not info_pdf.get('tiene_texto'):
+            return jsonify({
+                'error': 'PDF sin texto extraÃ­ble (probablemente escaneado).',
+                'aviso': info_pdf.get('aviso', ''),
+                'sugerencia': 'Pide al autor el manuscrito original o un PDF '
+                              'con texto seleccionable.',
+            }), 422
+
+        texto_libro = '\n\n'.join(b.texto for b in ms_pdf.bloques)
+        chars_libro = len(texto_libro)
+
+        print(
+            f'[pack-promocion] inicio Â· titulo={titulo!r} autor={autor!r} '
+            f'genero={genero!r} asesora={asesora!r} '
+            f'chars_libro={chars_libro} '
+            f'presupuesto_id={presupuesto_id!r}',
+            flush=True,
+        )
+
+        # ââ Llamar al generador (Claude API) ââââââââââââââââââââââââââââââ
+        pack = generar_pack_promocion(
+            texto_libro=texto_libro,
+            titulo=titulo,
+            autor=autor,
+            genero=genero,
+            url_libreria=url_libreria,
+        )
+
+        # ââ Enriquecer _meta con contexto del endpoint ââââââââââââââââââââ
+        if '_meta' not in pack or not isinstance(pack.get('_meta'), dict):
+            pack['_meta'] = {}
+        pack['_meta'].update({
+            'asesora':         asesora,
+            'presupuesto_id':  presupuesto_id or None,
+            'chars_libro':     chars_libro,
+            'chars_truncado':  chars_libro > 80_000,
+        })
+
+        print(
+            f'[pack-promocion] OK Â· '
+            f'tokens_in={pack["_meta"].get("tokens_input")} '
+            f'tokens_out={pack["_meta"].get("tokens_output")} '
+            f'coste_eur={pack["_meta"].get("coste_eur")}',
+            flush=True,
+        )
+
+        return jsonify(pack)
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': f'{type(e).__name__}: {str(e)}'}), 500
+
+
+# ââ Arranque ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=False)

@@ -228,7 +228,7 @@ def _llamar_claude(parrafos_chunk: list, client: anthropic.Anthropic) -> dict:
     except Exception as e:
         print(f'[corrector] no se pudo leer usage: {e}', flush=True)
 
-    raw = response.content[0].text.strip() if response.content else ''
+    raw = (next((b.text for b in (response.content or []) if getattr(b, "type", None) == "text"), "") or "").strip()
     # Limpiar markdown code fences si vinieran
     if raw.startswith('```'):
         raw = re.sub(r'^```(?:json)?\s*', '', raw)

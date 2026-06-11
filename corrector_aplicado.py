@@ -8,7 +8,7 @@ Claude API, generando un .docx con Control de Cambios + Comentarios al margen.
 Modo conservador (default):
   - Mecánicas (tildes, comillas, rayas, puntuación, mayúsculas, cursivas,
     erratas claras): se aplican como Control de Cambios (tachado/añadido)
-  - Subjetivas (reescritura, concordancia, repeticiones léxicas):
+  - Subjetivas (reescritura, concordanhcia, repeticiones léxicas):
     se sugieren como Comentarios al margen
 
 Procesamiento ASÍNCRONO con sistema de jobs en memoria (RAM compartida
@@ -38,7 +38,7 @@ from docx.shared import RGBColor
 
 
 # ─── Configuración ────────────────────────────────────────────────────────────
-MODELO_CLAUDE = 'claude-sonnet-4-5'
+MODELO_CLAUDE = os.getenv("ANTHROPIC_MODEL", "claude-fable-5")
 MAX_TOKENS_RESPUESTA = 8192
 CHUNK_PARRAFOS = 12   # párrafos por llamada — ~3000-4000 chars de contexto
 TIMEOUT_API_SEG = 90  # timeout por llamada Claude

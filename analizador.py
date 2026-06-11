@@ -126,7 +126,7 @@ def analizar_manuscrito(ms, titulo: str, autor: str, asesora_nombre: str = '') -
         )
         print(f'[analizador] Respuesta recibida, content blocks: {len(msg.content)}', flush=True)
 
-        texto = msg.content[0].text
+        texto = next((b.text for b in (msg.content or []) if getattr(b, "type", None) == "text"), "")
         print(f'[analizador] Texto respuesta ({len(texto)} chars): {texto[:200]}...', flush=True)
 
         # Extraer JSON aunque venga con markdown

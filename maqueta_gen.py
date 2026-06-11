@@ -3,7 +3,7 @@ maqueta_gen.py — Maqueta A5 según estándares Penguin Random House
 Márgenes por sección áurea, Lora 11/13.5, small caps, drop cap 3 líneas,
 control viudas/huérfanas, folios esquinas exteriores.
 """
-import io, re, os
+import io, re, os  # Fase 1 IA estructura (redeploy)
 from reportlab.lib.pagesizes import A5
 from reportlab.lib.units import mm
 pt = 1  # 1 point = 1 reportlab unit

@@ -726,6 +726,22 @@ def generar_maqueta_completa(
 
 
 def _parse_texto(texto: str):
+    """Detecta la estructura del manuscrito.
+    Fase 1: intenta la deteccion inteligente con IA (Fable 5) y, si falla,
+    cae automaticamente al parser por regex. Se desactiva con MAQUETA_IA=0.
+    """
+    if os.getenv("MAQUETA_IA", "1") == "1":
+        try:
+            from estructura_ia import estructura_bloques
+            bloques = estructura_bloques(texto)
+            print(f"[maqueta] estructura IA OK: {len(bloques)} bloques", flush=True)
+            return bloques
+        except Exception as e:
+            print(f"[maqueta] estructura IA fallo ({e}); uso regex", flush=True)
+    return _parse_texto_regex(texto)
+
+
+def _parse_texto_regex(texto: str):
     from docx_parser import Bloque
     lineas = [l.strip() for l in texto.splitlines() if l.strip()]
     cap_re = re.compile(r'^(CAP[IÍ]TULO\s+\w[\w\s]{0,30})', re.IGNORECASE)

@@ -120,7 +120,7 @@ def analizar_manuscrito(ms, titulo: str, autor: str, asesora_nombre: str = '') -
         print(f'[analizador] Prompt construido ({len(prompt_final)} chars)', flush=True)
 
         msg = client.messages.create(
-            model='claude-sonnet-4-5',
+                    model=os.getenv("ANTHROPIC_MODEL", "claude-fable-5"),
             max_tokens=4000,
             messages=[{'role': 'user', 'content': prompt_final}]
         )

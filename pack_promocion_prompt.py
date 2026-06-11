@@ -242,7 +242,7 @@ def generar_pack_promocion(
     )
 
     # Reconstruir el JSON (el prefill '{' se añade al inicio del output)
-    raw = '{' + response.content[0].text
+    raw = '{' + next((b.text for b in (response.content or []) if getattr(b, "type", None) == "text"), "")
     raw = raw.strip()
     # Por si el modelo añade ```json al inicio o ``` al final (raro con prefill)
     if raw.startswith('```'):

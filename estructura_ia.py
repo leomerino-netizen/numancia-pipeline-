@@ -62,7 +62,7 @@ def estructura_bloques(texto: str) -> list:
         max_tokens=8000,
         messages=[{'role': 'user', 'content': prompt}],
     )
-    raw = msg.content[0].text
+    raw = next((b.text for b in (msg.content or []) if getattr(b, "type", None) == "text"), "")
     print(f"[estructura_ia] respuesta {len(raw)} chars", flush=True)
 
     m = re.search(r'\{.*\}', raw, re.DOTALL)

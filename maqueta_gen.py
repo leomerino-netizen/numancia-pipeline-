@@ -100,6 +100,30 @@ ESTILOS = {
         'drop_cap':   True,        # capitular al inicio de capitulo
         'small_caps': True,        # versalitas en la primera frase
     },
+    'numancia': {
+        'fs_body':  11,            # cuerpo
+        'ld_body':  14,            # leading mas aireado (lectura limpia)
+        'indent':   4 * mm,        # sangria discreta
+        'sc_size':  8.5,           # (sin uso: small_caps False)
+        'm_int':    20 * mm,       # margen interior
+        'm_ext':    18 * mm,       # margen exterior
+        'm_top':    18 * mm,       # margen superior
+        'm_bot':    22 * mm,       # margen inferior
+        'drop_cap':   False,       # estilo sobrio: sin capitular
+        'small_caps': False,       # estilo sobrio: sin versalitas
+    },
+    'planeta': {
+        'fs_body':  10.5,          # cuerpo mas compacto (comercial)
+        'ld_body':  12.5,          # leading ajustado (mas texto/pagina)
+        'indent':   5 * mm,        # sangria
+        'sc_size':  8,             # versalitas algo menores
+        'm_int':    18 * mm,       # margen interior
+        'm_ext':    15 * mm,       # margen exterior
+        'm_top':    16 * mm,       # margen superior
+        'm_bot':    18 * mm,       # margen inferior
+        'drop_cap':   False,       # sin capitular
+        'small_caps': True,        # mantiene versalitas en primera frase
+    },
 }
 
 

@@ -233,7 +233,6 @@ def generar_pack_promocion(
     response = client.messages.create(
         model=model,
         max_tokens=max_tokens,
-        temperature=temperature,
         system=SYSTEM_PROMPT,
         messages=[
             {'role': 'user',      'content': user_prompt},

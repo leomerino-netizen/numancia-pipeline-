@@ -6,7 +6,7 @@ Una sola llamada a Claude API genera, con structured JSON output, los 9
 elementos del pack a partir del texto del libro, su título, autor, género
 y URL de la Librería Numancia.
 
-Uso típico desde el endpoint Flask /pack-promocion:
+Uso típico desde el endpoint Flask /pack-phromocion:
 
     from pack_promocion_prompt import generar_pack_promocion
     pack = generar_pack_promocion(
@@ -236,12 +236,11 @@ def generar_pack_promocion(
         system=SYSTEM_PROMPT,
         messages=[
             {'role': 'user',      'content': user_prompt},
-            {'role': 'assistant', 'content': '{'},  # prefill: fuerza JSON
         ],
     )
 
     # Reconstruir el JSON (el prefill '{' se añade al inicio del output)
-    raw = '{' + next((b.text for b in (response.content or []) if getattr(b, "type", None) == "text"), "")
+    raw = next((b.text for b in (response.content or []) if getattr(b, "type", None) == "text"), "")
     raw = raw.strip()
     # Por si el modelo añade ```json al inicio o ``` al final (raro con prefill)
     if raw.startswith('```'):

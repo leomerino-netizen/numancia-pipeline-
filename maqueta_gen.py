@@ -612,7 +612,10 @@ def cuerpo(story, bloques, S):
                 # Drop cap PRH con small caps — solo si es prosa con texto suficiente
                 texto_limpio = re.sub(r'<[^>]+>', '', hx).strip()
                 es_dialogo   = (t == 'dialogo') or texto_limpio.startswith('—')
-                if (not es_dialogo) and len(texto_limpio) >= 8:
+                # Solo aplicar drop cap + versalitas si el capitulo arranca con LETRA
+                # (evita capitales feas sobre signos como ¿ ¡ « " — al inicio)
+                empieza_letra = texto_limpio[:1].isalpha()
+                if (not es_dialogo) and empieza_letra and len(texto_limpio) >= 8:
                     try:
                         dc = DropCap(hx, CUERPO_W, sz_cap=38,
                                      sz_body=FS_BODY, ld=LD_BODY, small_caps=True)
@@ -629,7 +632,8 @@ def cuerpo(story, bloques, S):
             elif b.primer_parr:
                 # Primer párrafo sin drop cap (tras separador, etc.)
                 raw = re.sub(r'<[^>]+>', '', hx).strip()
-                sc_html = _small_caps(raw)
+                # Versalitas solo si arranca con letra (no sobre signos ¿ ¡ « " —)
+                sc_html = _small_caps(raw) if raw[:1].isalpha() else hx
                 story.append(Paragraph(sc_html, S['body0']))
                 en_cap = False
 

@@ -80,6 +80,29 @@ CG = colors.HexColor('#5A5A5A')
 CL = colors.HexColor('#C0C0C0')
 CO = colors.HexColor('#4A4A4A')
 
+# ── Comportamiento de realce de inicio de capitulo (lo fija el preset) ───────
+DROP_CAP   = True      # capitular de 3 lineas al inicio de capitulo
+SMALL_CAPS = True      # versalitas en la primera frase
+
+# ── Presets de maquetacion ──────────────────────────────────────
+# Cada preset agrupa los valores tipograficos y de comportamiento que definen
+# un estilo. 'penguin' reproduce EXACTAMENTE la maqueta PRH actual.
+ESTILOS = {
+    'penguin': {
+        'fs_body':  11,            # tamano cuerpo
+        'ld_body':  13.5,          # leading (ratio 1.23 PRH)
+        'indent':   5 * mm,        # sangria primera linea
+        'sc_size':  8.5,           # tamano versalitas
+        'm_int':    22 * mm,       # margen interior (lomo)
+        'm_ext':    20 * mm,       # margen exterior
+        'm_top':    20 * mm,       # margen superior
+        'm_bot':    25 * mm,       # margen inferior
+        'drop_cap':   True,        # capitular al inicio de capitulo
+        'small_caps': True,        # versalitas en la primera frase
+    },
+}
+
+
 
 _HERE     = os.path.dirname(os.path.abspath(__file__))
 LOGO_PATH = next((p for p in [
@@ -615,10 +638,10 @@ def cuerpo(story, bloques, S):
                 # Solo aplicar drop cap + versalitas si el capitulo arranca con LETRA
                 # (evita capitales feas sobre signos como ¿ ¡ « " — al inicio)
                 empieza_letra = texto_limpio[:1].isalpha()
-                if (not es_dialogo) and empieza_letra and len(texto_limpio) >= 8:
+                if DROP_CAP and (not es_dialogo) and empieza_letra and len(texto_limpio) >= 8:
                     try:
                         dc = DropCap(hx, CUERPO_W, sz_cap=38,
-                                     sz_body=FS_BODY, ld=LD_BODY, small_caps=True)
+                                     sz_body=FS_BODY, ld=LD_BODY, small_caps=SMALL_CAPS)
                         story.append(dc)
                     except Exception:
                         story.append(Paragraph(hx, S['body0']))
@@ -633,7 +656,7 @@ def cuerpo(story, bloques, S):
                 # Primer párrafo sin drop cap (tras separador, etc.)
                 raw = re.sub(r'<[^>]+>', '', hx).strip()
                 # Versalitas solo si arranca con letra (no sobre signos ¿ ¡ « " —)
-                sc_html = _small_caps(raw) if raw[:1].isalpha() else hx
+                sc_html = _small_caps(raw) if (SMALL_CAPS and raw[:1].isalpha()) else hx
                 story.append(Paragraph(sc_html, S['body0']))
                 en_cap = False
 
@@ -674,6 +697,8 @@ def generar_maqueta_completa(
     laminado: str = 'Laminado brillante',
     isbn: str = '',
     deposito_legal: str = '',
+    tipo_obra: str = 'novela',
+    estilo: str = 'penguin',
 ) -> bytes:
     from docx_parser import parsear_docx, Manuscrito
 
@@ -694,6 +719,30 @@ def generar_maqueta_completa(
 
     titulo_real = titulo or ms.titulo or 'Sin título'
     autor_real  = autor  or ms.autor  or ''
+
+    # ── Aplicar preset de estilo ───────────────────────────────────
+    # Reasigna las constantes globales segun el preset elegido ANTES de construir
+    # los estilos del documento. Para 'penguin' los valores son identicos a los
+    # de hoy, por lo que la maqueta no cambia.
+    _preset = ESTILOS.get(estilo, ESTILOS['penguin'])
+    global FS_BODY, LD_BODY, INDENT, SC_SIZE
+    global M_INT, M_EXT, M_TOP, M_BOT
+    global CUERPO_W, CUERPO_H, LINEAS_PAG
+    global DROP_CAP, SMALL_CAPS
+    FS_BODY    = _preset['fs_body']
+    LD_BODY    = _preset['ld_body']
+    INDENT     = _preset['indent']
+    SC_SIZE    = _preset['sc_size']
+    M_INT      = _preset['m_int']
+    M_EXT      = _preset['m_ext']
+    M_TOP      = _preset['m_top']
+    M_BOT      = _preset['m_bot']
+    DROP_CAP   = _preset['drop_cap']
+    SMALL_CAPS = _preset['small_caps']
+    # Recalcular caja tipografica y lineas por pagina con los nuevos margenes
+    CUERPO_W   = AW - M_INT - M_EXT
+    CUERPO_H   = AH - M_TOP - M_BOT
+    LINEAS_PAG = int((CUERPO_H) / (LD_BODY * mm / pt))
 
     S    = estilos()
     buf  = io.BytesIO()

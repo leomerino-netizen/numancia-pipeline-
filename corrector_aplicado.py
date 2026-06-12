@@ -35,6 +35,11 @@ from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn, nsmap
 from docx.shared import RGBColor
+import zipfile
+from lxml import etree
+
+# Namespace WordprocessingML (para comentarios nativos)
+W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 
 
 # ─── Configuración ────────────────────────────────────────────────────────────
@@ -347,53 +352,67 @@ def _aplicar_cambio_a_parrafo(p, original: str, corregido: str, autor: str, fech
 
 def _agregar_comentario(doc: Document, parr, texto_comentario: str,
                         autor: str, comments_state: dict):
-    """
-    Agrega un comentario al margen sobre el párrafo `parr`.
-    Word necesita un archivo word/comments.xml en el .docx + referencias.
-    Esta implementación es simplificada: anota el comentario inline en
-    el párrafo con un marcador visible (no usa el sistema nativo de
-    comments.xml porque python-docx no lo soporta directamente sin
-    manipular el ZIP del .docx).
+    """Marca el parrafo `parr` con un comentario NATIVO de Word (al margen)."""
+    items = comments_state.setdefault('items', [])
+    cid = len(items)  # id incremental 0, 1, 2, ...
 
-    Para mantener simplicidad y robustez en producción, añadimos el
-    comentario como párrafo adicional con estilo distintivo.
-    """
-    # Añadir un párrafo siguiente con el comentario en cursiva y color azul
-    # Este es un compromiso técnico: el comentario aparece justo después
-    # del párrafo en lugar de en el margen, pero es totalmente visible y
-    # editable. El asesor puede convertirlos en Comentarios reales en Word
-    # si lo desea (Insertar > Comentario sobre el texto).
-    # Insertar tras el párrafo actual
-    nuevo = doc.paragraphs[0].insert_paragraph_before  # placeholder
+    start = OxmlElement('w:commentRangeStart')
+    start.set(qn('w:id'), str(cid))
+    end = OxmlElement('w:commentRangeEnd')
+    end.set(qn('w:id'), str(cid))
+    ref_run = OxmlElement('w:r')
+    ref = OxmlElement('w:commentReference')
+    ref.set(qn('w:id'), str(cid))
+    ref_run.append(ref)
 
-    # Creamos un nuevo párrafo justo después del actual
-    nuevo_p = OxmlElement('w:p')
-    pPr = OxmlElement('w:pPr')
-    # Estilo: indentación + cursiva + color azul
-    ind = OxmlElement('w:ind')
-    ind.set(qn('w:left'), '720')  # 0.5 inch
-    pPr.append(ind)
-    nuevo_p.append(pPr)
+    p = parr._element
+    p.insert(0, start)   # antes del contenido del parrafo
+    p.append(end)        # tras el contenido
+    p.append(ref_run)    # marca de referencia del comentario
 
-    r = OxmlElement('w:r')
-    rPr = OxmlElement('w:rPr')
-    italic = OxmlElement('w:i')
-    rPr.append(italic)
-    color = OxmlElement('w:color')
-    color.set(qn('w:val'), '1F4E79')  # azul oscuro Editorial
-    rPr.append(color)
-    sz = OxmlElement('w:sz')
-    sz.set(qn('w:val'), '18')  # 9pt
-    rPr.append(sz)
-    r.append(rPr)
-    t = OxmlElement('w:t')
-    t.set(qn('xml:space'), 'preserve')
-    t.text = f'  💬 [{autor}] {texto_comentario}'
-    r.append(t)
-    nuevo_p.append(r)
+    items.append({'id': cid, 'autor': autor, 'texto': texto_comentario})
 
-    # Insertar después del párrafo actual
-    parr._element.addnext(nuevo_p)
+
+def _inyectar_comentarios(docx_bytes: bytes, items: list) -> bytes:
+    """Inyecta word/comments.xml + content-type + relacion en el .docx."""
+    if not items:
+        return docx_bytes
+    W = W_NS
+    comments = etree.Element(f'{{{W}}}comments', nsmap={'w': W})
+    for it in items:
+        c = etree.SubElement(comments, f'{{{W}}}comment')
+        c.set(f'{{{W}}}id', str(it['id']))
+        c.set(f'{{{W}}}author', it['autor'])
+        c.set(f'{{{W}}}date', datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
+        c.set(f'{{{W}}}initials', 'EN')
+        p = etree.SubElement(c, f'{{{W}}}p')
+        r = etree.SubElement(p, f'{{{W}}}r')
+        t = etree.SubElement(r, f'{{{W}}}t')
+        t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+        t.text = it['texto']
+    comments_xml = etree.tostring(comments, xml_declaration=True, encoding='UTF-8', standalone=True)
+    src = io.BytesIO(docx_bytes); out = io.BytesIO()
+    with zipfile.ZipFile(src, 'r') as zin:
+        names = zin.namelist()
+        with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as zout:
+            for name in names:
+                data = zin.read(name)
+                if name == '[Content_Types].xml' and 'comments+xml' not in data.decode('utf-8'):
+                    root = etree.fromstring(data)
+                    ov = etree.SubElement(root, '{http://schemas.openxmlformats.org/package/2006/content-types}Override')
+                    ov.set('PartName', '/word/comments.xml')
+                    ov.set('ContentType', 'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml')
+                    data = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=True)
+                elif name == 'word/_rels/document.xml.rels':
+                    root = etree.fromstring(data)
+                    rel = etree.SubElement(root, '{http://schemas.openxmlformats.org/package/2006/relationships}Relationship')
+                    rel.set('Id', 'rIdComments')
+                    rel.set('Type', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments')
+                    rel.set('Target', 'comments.xml')
+                    data = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=True)
+                zout.writestr(name, data)
+            zout.writestr('word/comments.xml', comments_xml)
+    return out.getvalue()
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -440,6 +459,7 @@ def _procesar_docx(
     client = anthropic.Anthropic(api_key=api_key)
 
     doc = Document(io.BytesIO(docx_bytes))
+    comments_state = {}  # estado compartido para comentarios nativos
     parrafos_info = _extraer_parrafos_no_vacios(doc)
     total = len(parrafos_info)
 
@@ -497,9 +517,9 @@ def _procesar_docx(
                 if comentario:
                     _agregar_comentario(
                         doc, parr_obj,
-                        f'[{tipo.upper()}] {comentario}',
+                        f'Propuesta ({tipo}): {comentario}',
                         AUTOR_REVISION,
-                        {}
+                        comments_state
                     )
                     sugerencias_anyadidas += 1
 
@@ -517,6 +537,7 @@ def _procesar_docx(
     out_buf = io.BytesIO()
     doc.save(out_buf)
     out_bytes = out_buf.getvalue()
+    out_bytes = _inyectar_comentarios(out_bytes, comments_state.get('items', []))
 
     resumen = {
         'parrafos_totales': total,

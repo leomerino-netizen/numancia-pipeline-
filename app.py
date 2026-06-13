@@ -474,6 +474,7 @@ def generar_preview_pdf():
         asesora        = (d.get('asesora') or 'laura').strip().lower()
         tipo_papel     = (d.get('tipo_papel') or 'Papel novela ahuesado de 80 g/mÂ²').strip()
         acabado        = (d.get('acabado') or 'Tapa blanda con solapas, encuadernaciÃ³n fresada').strip()
+        estilo = (d.get('estilo') or 'penguin').strip().lower()
 
         bloques_raw = d.get('bloques')
         tiene_bloques = isinstance(bloques_raw, list) and len(bloques_raw) > 0
@@ -515,7 +516,7 @@ def generar_preview_pdf():
                                   dedicatoria=dedicatoria,
                                   epigrafe=epigrafe, epigrafe_autor=epigrafe_autor,
                                   asesora=asesora,
-                                  tipo_papel=tipo_papel, acabado=acabado)
+                                  tipo_papel=tipo_papel, acabado=acabado, estilo=estilo)
         elif tiene_docx:
             print(f'[preview] generando desde docx_base64')
             docx_b = base64.b64decode(d['docx_base64'])
@@ -523,14 +524,14 @@ def generar_preview_pdf():
                                   dedicatoria=dedicatoria,
                                   epigrafe=epigrafe, epigrafe_autor=epigrafe_autor,
                                   asesora=asesora,
-                                  tipo_papel=tipo_papel, acabado=acabado)
+                                  tipo_papel=tipo_papel, acabado=acabado, estilo=estilo)
         else:
             print(f'[preview] generando desde texto plano')
             pdf = generar_preview(d.get('texto',''), titulo, autor,
                                   dedicatoria=dedicatoria,
                                   epigrafe=epigrafe, epigrafe_autor=epigrafe_autor,
                                   asesora=asesora,
-                                  tipo_papel=tipo_papel, acabado=acabado)
+                                  tipo_papel=tipo_papel, acabado=acabado, estilo=estilo)
 
         if not pdf:
             print(f'[preview] ERROR: generar_preview devolviÃ³ bytes vacÃ­os')
@@ -610,6 +611,7 @@ def procesar_manuscrito():
         contenido_bytes = archivo.read()
         nombre_fichero  = archivo.filename or 'manuscrito'
         asesora    = request.form.get('asesora', 'laura')
+        estilo = (request.form.get('estilo') or 'penguin').strip().lower()
         titulo_ovr = request.form.get('titulo', '')
         autor_ovr = request.form.get('autor_ovr', '')
         # NÃºmero de valoraciÃ³n (opcional) â viene del frontend Lovable.
@@ -738,11 +740,11 @@ def procesar_manuscrito():
             asesora_slug = (asesora or 'laura').strip().lower()
             if docx_bytes_para_maqueta:
                 preview_bytes = generar_preview('', titulo, autor, docx_bytes=docx_bytes_para_maqueta,
-                                                asesora=asesora_slug)
+                                                asesora=asesora_slug, estilo=estilo)
             else:
                 # Para PDF: pasar los bloques ya parseados para conservar estructura
                 preview_bytes = generar_preview('', titulo, autor, bloques=ms.bloques,
-                                                asesora=asesora_slug)
+                                                asesora=asesora_slug, estilo=estilo)
 
         # 7. Nombres de archivo profesionales
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:50].strip()

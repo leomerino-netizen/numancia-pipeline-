@@ -6,7 +6,7 @@ Una sola llamada a Claude API genera, con structured JSON output, los 9
 elementos del pack a partir del texto del libro, su título, autor, género
 y URL de la Librería Numancia.
 
-Uso típico desde el endpoint Flask /pack-phromocion:
+Uso típico desde el endpoint Flask /pack-pfhhromocion:
 
     from pack_promocion_prompt import generar_pack_promocion
     pack = generar_pack_promocion(
@@ -66,12 +66,12 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido, sin texto antes ni después, sin
 
 LONGITUDES (en caracteres, no palabras)
 - sinopsis_corta: 150-200 caracteres (sirve para ficha, X/Twitter, descripción Amazon corta).
-- sinopsis_larga: 800-1200 caracteres (para press kit, descripción Amazon larga).
+- sinopsis_larga: 500-800 caracteres (para press kit, descripción Amazon larga).
 - bio_autor_sugerida: 350-500 caracteres.
 - cita_nuclear.texto: 80-200 caracteres (la cita más memorable, para reverso del libro y posts grandes).
 - citas_destacadas[*].texto: 60-180 caracteres cada una.
 - medios_objetivo: exactamente 25 elementos.
-- calendario_editorial_4_semanas: exactamente 28 elementos (7 por semana × 4 semanas).
+- calendario_editorial_4_semanas: exactamente 12 elementos (3 por semana × 4 semanas).
 - descripcion_amazon_corta: 200-250 caracteres.
 - descripcion_amazon_larga: 1500-3000 caracteres, con dobles saltos de línea entre párrafos.
 - email_lanzamiento_autor.cuerpo: 400-700 caracteres.
@@ -144,14 +144,14 @@ Genera el pack de marketing en formato JSON exactamente con esta estructura:
   "post_linkedin_autor": "..."
 }}
 
-ESTRUCTURA SUGERIDA DEL CALENDARIO (28 publicaciones, 7 por semana):
+ESTRUCTURA SUGERIDA DEL CALENDARIO (12 publicaciones, 3 por semana):
 - Semana 1 — "Lanzamiento": anuncio oficial, teaser de portada, primera cita destacada, datos técnicos del libro, frase sobre el origen del libro, story con enlace a librería, llamada a la pre-compra/compra.
 - Semana 2 — "El libro por dentro": 4 citas destacadas distribuidas, 1 extracto breve, 1 dato curioso/contexto histórico/temático, 1 CTA de compra suave.
 - Semana 3 — "El autor y el proceso": bio breve del autor, motivación para escribir el libro, anécdota del proceso, foto de escritorio/manuscrito (texto sugerido para acompañar), agradecimientos, 1 cita, 1 CTA.
 - Semana 4 — "Comunidad y eco": invitación a reseñas, recomendaciones del libro a perfiles concretos (mujeres que leen tal cosa, padres que..., aficionados a...), recordatorio del enlace, 1 cita final, 1 idea de regalo, 1 mensaje de gratitud, CTA cierre.
 
 Distribución de canales sugerida por semana (puedes ajustar según el género):
-- 4 instagram_feed + 2 instagram_story + 1 linkedin_autor
+- 1 instagram_feed + 1 instagram_story + 1 linkedin_autor (3 por semana)
 
 Si el género del libro es claramente no-ficción profesional (ensayo, divulgación, autoayuda), añade más peso a linkedin_autor (3 por semana) y reduce instagram_story.
 

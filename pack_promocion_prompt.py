@@ -31,7 +31,7 @@ import anthropic
 MODEL = os.getenv("ANTHROPIC_MODEL", "claude-fable-5")   # Mismo modelo que el resto del pipeline
 MAX_TOKENS = 16000             # Output generoso (28 publicaciones + 25 medios)
 TEMPERATURE = 0.4              # Marketing creativo pero fiel al libro
-MAX_CHARS_TEXTO_LIBRO = 80_000 # ~20k tokens, primeros 80k caracteres del libro
+MAX_CHARS_TEXTO_LIBRO = 40_000 # ~20k tokens, primeros 80k caracteres del libro
 
 # Tarifas Claude Sonnet 4.5 (USD por millón de tokens, oficial Anthropic)
 PRECIO_INPUT_USD_POR_MTOK  = 3.0

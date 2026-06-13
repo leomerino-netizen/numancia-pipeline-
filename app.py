@@ -281,6 +281,8 @@ def maqueta():
                 laminado       = request.form.get('laminado',      'Laminado brillante'),
                 isbn           = request.form.get('isbn', ''),
                 deposito_legal = request.form.get('deposito_legal', ''),
+                estilo         = request.form.get('estilo',    'penguin'),
+                tipo_obra      = request.form.get('tipo_obra', 'novela'),
             )
             titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:60].strip()
             return _pdf_response(pdf, f"Maqueta completa - {titulo_safe}.pdf")
@@ -305,6 +307,8 @@ def maqueta():
             laminado       = d.get('laminado',      'Laminado brillante'),
             isbn           = d.get('isbn', ''),
             deposito_legal = d.get('deposito_legal', ''),
+            estilo         = d.get('estilo',    'penguin'),
+            tipo_obra      = d.get('tipo_obra', 'novela'),
         )
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in d.get('titulo','maqueta'))[:60].strip()
         return _pdf_response(pdf, f"Maqueta completa - {titulo_safe}.pdf")

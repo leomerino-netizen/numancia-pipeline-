@@ -15,8 +15,9 @@ from maqueta_gen import (
     mk_frame, hdr_b, hdr_c, estilos, DropCap, _parse_texto,
     BF, BF_I, HF, HF_B, HF_I, HF_BI, CT, CG, CL, CUERPO_W,
     AW, AH, M_INT, M_EXT, M_TOP, M_BOT, _OddPageBreak,
-    _pagina_creditos, NumanciaDocTemplate
+    _pagina_creditos, NumanciaDocTemplate, ESTILOS
 )
+import maqueta_gen as mg
 
 # ── Fotos circulares de las asesoras ──────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -150,8 +151,20 @@ def generar_preview(texto: str, titulo: str, autor: str,
                     epigrafe_autor: str = '',
                     asesora: str = 'laura',
                     tipo_papel: str = 'Papel novela ahuesado de 80 g/m²',
-                    acabado: str = 'Tapa blanda con solapas, encuadernación fresada') -> bytes:
+                    acabado: str = 'Tapa blanda con solapas, encuadernación fresada', estilo: str = 'penguin') -> bytes:
     from docx_parser import parsear_docx, Manuscrito
+
+    _preset = ESTILOS.get(estilo, ESTILOS['penguin'])
+    mg.DROP_CAP   = _preset['drop_cap']
+    mg.SMALL_CAPS = _preset['small_caps']
+    mg.FS_BODY    = _preset['fs_body']
+    mg.LD_BODY    = _preset['ld_body']
+    mg.INDENT     = _preset['indent']
+    mg.SC_SIZE    = _preset['sc_size']
+    mg.M_INT = _preset['m_int']; mg.M_EXT = _preset['m_ext']
+    mg.M_TOP = _preset['m_top']; mg.M_BOT = _preset['m_bot']
+    mg.CUERPO_W = mg.AW - mg.M_INT - mg.M_EXT
+    mg.CUERPO_H = mg.AH - mg.M_TOP - mg.M_BOT
 
     if bloques is not None:
         # Bloques pre-parseados (ej. desde PDF)
@@ -407,7 +420,7 @@ def generar_preview(texto: str, titulo: str, autor: str,
                     parte2 = texto_limpio[corte:].strip()
                     # Parte 1: con DropCap (entra en la apertura)
                     try:
-                        story.append(DropCap(parte1, CUERPO_W, sz_cap=38, sz_body=11, ld=13.5))
+                        story.append(DropCap(parte1, CUERPO_W, sz_cap=38, sz_body=11, ld=13.5)) if _preset['drop_cap'] else story.append(Paragraph(mg._small_caps(parte1) if _preset['small_caps'] else parte1, S['body0']))
                     except Exception:
                         story.append(Paragraph(parte1, S['body0']))
                     # PageBreak forzado para garantizar el aire inferior
@@ -417,7 +430,7 @@ def generar_preview(texto: str, titulo: str, autor: str,
                         story.append(Paragraph(parte2, S['body0']))
                 elif (not es_dialogo) and len(texto_limpio) >= 8:
                     try:
-                        story.append(DropCap(hx, CUERPO_W, sz_cap=38, sz_body=11, ld=13.5))
+                        story.append(DropCap(hx, CUERPO_W, sz_cap=38, sz_body=11, ld=13.5)) if _preset['drop_cap'] else story.append(Paragraph(mg._small_caps(hx) if _preset['small_caps'] else hx, S['body0']))
                     except Exception:
                         story.append(Paragraph(hx, S['body0']))
                 else:

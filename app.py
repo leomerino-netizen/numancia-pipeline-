@@ -283,6 +283,7 @@ def maqueta():
                 deposito_legal = request.form.get('deposito_legal', ''),
                 estilo         = request.form.get('estilo',    'penguin'),
                 tipo_obra      = request.form.get('tipo_obra', 'novela'),
+                con_indice     = request.form.get('con_indice', 'false').lower() in ('true', '1', 'yes', 'si', 'sí'),
             )
             titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in titulo)[:60].strip()
             return _pdf_response(pdf, f"Maqueta completa - {titulo_safe}.pdf")
@@ -309,6 +310,7 @@ def maqueta():
             deposito_legal = d.get('deposito_legal', ''),
             estilo         = d.get('estilo',    'penguin'),
             tipo_obra      = d.get('tipo_obra', 'novela'),
+            con_indice     = str(d.get('con_indice', False)).lower() in ('true', '1', 'yes', 'si', 'sí'),
         )
         titulo_safe = ''.join(c if c.isalnum() or c in ' -_' else '' for c in d.get('titulo','maqueta'))[:60].strip()
         return _pdf_response(pdf, f"Maqueta completa - {titulo_safe}.pdf")

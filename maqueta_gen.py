@@ -225,7 +225,10 @@ class DropCap(Flowable):
 
     def _build_resto(self, raw: str) -> str:
         """Texto del párrafo (sin la 1ª letra) con small caps iniciales."""
-        body = raw[1:] if raw else ''
+        _i = 0
+        while _i < len(raw) and not raw[_i].isalpha():
+            _i += 1
+        body = raw[_i+1:] if raw else ''
         if not self.small_caps or not body:
             return body
         # Small caps para las primeras palabras (hasta primer punto o ~50 chars)
@@ -244,7 +247,12 @@ class DropCap(Flowable):
             raw = re.sub(r'<[^>]+>', '', self.html).strip()
             if not raw or len(raw) < 2: return
 
-            letra = raw[0]
+            _i = 0
+            while _i < len(raw) and not raw[_i].isalpha():
+                _i += 1
+            if _i >= len(raw):
+                return
+            letra = raw[_i]
             cap_w = self.sz_cap * 0.66
             mx    = cap_w + 2 * mm
             aw2   = max(min(self._aw, self.ancho) - mx, 10)
@@ -623,10 +631,9 @@ def cuerpo(story, bloques, S):
             # abren SIEMPRE en página impar (recto). El PageBreak salta a
             # nueva página, y _OddPageBreak detecta si esa página es par
             # y, en ese caso, fuerza otro salto para llegar a impar.
-            story.append(NextPageTemplate('blank'))
+            story.append(NextPageTemplate('chap'))
             story.append(PageBreak())
             story.append(_OddPageBreak())
-            story.append(NextPageTemplate('chap'))
 
             # Espacio superior mínimo — capítulo arranca cerca del margen
             story.append(Spacer(1, 8*mm))
@@ -661,7 +668,7 @@ def cuerpo(story, bloques, S):
                 es_dialogo   = (t == 'dialogo') or texto_limpio.startswith('—')
                 # Solo aplicar drop cap + versalitas si el capitulo arranca con LETRA
                 # (evita capitales feas sobre signos como ¿ ¡ « " — al inicio)
-                empieza_letra = texto_limpio[:1].isalpha()
+                empieza_letra = bool(re.match(r'^[¿¡«»“”"\'—\s]*[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]', texto_limpio))
                 if DROP_CAP and (not es_dialogo) and empieza_letra and len(texto_limpio) >= 8:
                     try:
                         dc = DropCap(hx, CUERPO_W, sz_cap=38,

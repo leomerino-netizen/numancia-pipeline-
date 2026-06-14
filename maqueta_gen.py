@@ -15,6 +15,7 @@ from reportlab.platypus import (
     Spacer, PageBreak, NextPageTemplate, HRFlowable, Image, KeepTogether
 )
 from reportlab.platypus.flowables import Flowable
+from reportlab.platypus.tableofcontents import TableOfContents
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.pdfmetrics import registerFontFamily
@@ -606,18 +607,23 @@ def prelims(story, titulo, autor, anyo, deds, epis, epi_autor, S,
 
 
 # ── Cuerpo ────────────────────────────────────────────────────────────────────
-def cuerpo(story, bloques, S):
+def cuerpo(story, bloques, S, con_indice=False):
     # Filtrar páginas en blanco al inicio del cuerpo (no tienen sentido
     # antes del primer capítulo). El cuerpo siempre arranca con contenido.
     while bloques and bloques[0].tipo == 'pagina_blanca':
         bloques = bloques[1:]
 
     en_cap = False
+    _toc_pend = None  # (nivel, texto) del capítulo pendiente de registrar en el índice
 
     for b in bloques:
         t  = b.tipo
         tx = b.texto
         hx = b.html or tx
+        # Flush de la entrada de índice pendiente si el capítulo no tenía subtítulo
+        if con_indice and _toc_pend is not None and t != 'cap_subtitulo':
+            story.append(_TocMark(_toc_pend[0], _toc_pend[1]))
+            _toc_pend = None
 
         # Página en blanco insertada manualmente por la asesora
         if t == 'pagina_blanca':
@@ -652,11 +658,21 @@ def cuerpo(story, bloques, S):
             # Espacio post-título mínimo
             story.append(Spacer(1, 4*mm))
 
+            if con_indice:
+                _nivel = 0 if re.search(r'\bPARTE\b', tx, re.IGNORECASE) else 1
+                _toc_pend = (_nivel, tx.strip())
             story.append(NextPageTemplate('recto'))
             en_cap = True
 
         elif t == 'cap_subtitulo':
             story.append(Paragraph(hx, S['cap_sub']))
+            if con_indice and _toc_pend is not None:
+                _nivel, _txt = _toc_pend
+                _sub = re.sub(r'<[^>]+>', '', hx).strip()
+                if _sub:
+                    _txt = f'{_txt}. {_sub}' if _txt else _sub
+                story.append(_TocMark(_nivel, _txt))
+                _toc_pend = None
 
         elif t == 'separador':
             story.append(Paragraph('❧', S['orn']))
@@ -694,6 +710,11 @@ def cuerpo(story, bloques, S):
             else:
                 story.append(Paragraph(hx, S['body']))
 
+    # Flush final de la última entrada de índice pendiente
+    if con_indice and _toc_pend is not None:
+        story.append(_TocMark(_toc_pend[0], _toc_pend[1]))
+        _toc_pend = None
+
 
 # ── Colofón ───────────────────────────────────────────────────────────────────
 def colofonBloque(story, titulo, anyo, S):
@@ -714,6 +735,37 @@ def colofonBloque(story, titulo, anyo, S):
 
 
 # ── API principal ─────────────────────────────────────────────────────────────
+def construir_indice(S):
+    """Crea el flowable TableOfContents con estilos por nivel.
+    Nivel 0 = Parte (versalitas, sin puntos). Nivel 1 = Capítulo (con puntos guía).
+    Los números de página se rellenan en la 2ª pasada de multiBuild.
+    """
+    toc = TableOfContents()
+    toc.dotsMinLevel = 1  # puntos guía a partir del nivel de capítulo
+    toc.levelStyles = [
+        ParagraphStyle('toc_parte', fontName=HF_B, fontSize=FS_BODY, leading=FS_BODY*1.6,
+                       textColor=CT, alignment=TA_LEFT, spaceBefore=6*mm, spaceAfter=1.5*mm,
+                       leftIndent=0, firstLineIndent=0),
+        ParagraphStyle('toc_cap', fontName=BF, fontSize=FS_BODY-1, leading=(FS_BODY-1)*1.5,
+                       textColor=CT, alignment=TA_LEFT, spaceBefore=0, spaceAfter=0.5*mm,
+                       leftIndent=6*mm, firstLineIndent=0),
+    ]
+    return toc
+
+
+def pagina_indice(story, toc, S):
+    """Añade la página de índice (recto) con título «ÍNDICE» y el TableOfContents."""
+    story.append(NextPageTemplate('blank'))
+    story.append(PageBreak())
+    story.append(_OddPageBreak())  # el índice abre en página impar (recto)
+    story.append(NextPageTemplate('recto'))
+    story.append(Spacer(1, 12*mm))
+    story.append(Paragraph('ÍNDICE',
+        ParagraphStyle('idx_h', fontName=HF_B, fontSize=18, leading=24, textColor=CT,
+                       alignment=TA_CENTER, spaceAfter=10*mm)))
+    story.append(toc)
+
+
 def generar_maqueta_completa(
     texto: str = '',
     titulo: str = '',
@@ -730,6 +782,7 @@ def generar_maqueta_completa(
     deposito_legal: str = '',
     tipo_obra: str = 'novela',
     estilo: str = 'penguin',
+    con_indice: bool = False,
 ) -> bytes:
     from docx_parser import parsear_docx, Manuscrito
 
@@ -801,11 +854,20 @@ def generar_maqueta_completa(
     prelims(story, titulo_real, autor_real, anyo,
             deds, epis, epi_a, S, papel, cubierta_tipo, laminado,
             isbn=isbn, deposito_legal=deposito_legal)
+    # Índice profesional (solo si la asesora marcó que el manuscrito lleva índice)
+    _toc = None
+    if con_indice:
+        _toc = construir_indice(S)
+        pagina_indice(story, _toc, S)
     story.append(NextPageTemplate('chap'))
     story.append(PageBreak())
-    cuerpo(story, bloques, S)
+    cuerpo(story, bloques, S, con_indice=con_indice)
     colofonBloque(story, titulo_real, anyo, S)
-    doc.build(story)
+    if con_indice:
+        # multiBuild hace varias pasadas para resolver los números de página del índice
+        doc.multiBuild(story)
+    else:
+        doc.build(story)
     return buf.getvalue()
 
 
@@ -912,6 +974,27 @@ class _OddPageBreak(Flowable):
 _OddBreakSentinel = _OddPageBreak
 
 
+# ── Marca de índice (TOC) ──────────────────────────────────────────────────
+class _TocMark(Flowable):
+    """Flowable invisible que registra una entrada del índice (TOC).
+
+    NumanciaDocTemplate.afterFlowable() lo detecta y llama a
+    self.notify('TOCEntry', (nivel, texto, pagina)) con la página REAL
+    donde cae el capítulo. Tras multiBuild, el TableOfContents tendrá los
+    números de página correctos.
+    """
+    _ZeroSize = True
+    def __init__(self, nivel, texto):
+        Flowable.__init__(self)
+        self.toc_nivel = int(nivel)
+        self.toc_texto = str(texto)
+    def wrap(self, aw, ah):
+        return (0, 0)
+    def draw(self):
+        pass
+
+
+
 # ── DocTemplate custom que respeta la convención de página impar ────────────
 class NumanciaDocTemplate(BaseDocTemplate):
     """
@@ -943,6 +1026,13 @@ class NumanciaDocTemplate(BaseDocTemplate):
         Esto evita páginas fantasma y desajustes de folio que ocurrían
         con handle_pageEnd/handle_pageBegin directos.
         """
+        if isinstance(flowable, _TocMark):
+            # Registrar entrada de índice con la página real actual
+            try:
+                self.notify('TOCEntry', (flowable.toc_nivel, flowable.toc_texto, self.page))
+            except Exception as e:
+                print(f'[toc] no se pudo registrar entrada: {e}', flush=True)
+            return
         if isinstance(flowable, _OddPageBreak):
             if self.page % 2 == 0:
                 # Página actual PAR → inyectar PageBreak para que el
